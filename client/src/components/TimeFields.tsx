@@ -1,6 +1,11 @@
 import { InputNumber, Slider } from "antd";
 import { STEP, formatMinutes, hoursToMinutes, minutesToHours } from "../time";
 
+/** One-tap minute presets offered beside the allocated and spent sliders. */
+const MINUTE_PRESETS = [30, 60, 90, 120, 240];
+/** One-tap percentages offered beside the progress slider. */
+const PROGRESS_PRESETS = [0, 25, 50, 75, 100];
+
 export interface TimeValues {
   allocated: number;
   spent: number;
@@ -74,6 +79,12 @@ export function TimeFields({ allocated, spent, progress, max, onChange, onCommit
             aria-label="Progress percent"
           />
         </div>
+        <QuickPicks
+          label="Progress"
+          picks={PROGRESS_PRESETS.map((p) => ({ value: p, label: `${p}%` }))}
+          value={progress}
+          onPick={(v) => set({ progress: v }, true)}
+        />
       </div>
       <p className="time-summary">
         {allocated === 0 && spent === 0 ? (
@@ -134,6 +145,40 @@ function TimeRow({ label, hint, value, max, onChange, onCommit }: RowProps) {
           aria-label={`${label} in hours`}
         />
       </div>
+      <QuickPicks
+        label={label}
+        picks={MINUTE_PRESETS.map((m) => ({ value: m, label: formatMinutes(m) }))}
+        value={value}
+        onPick={onCommit}
+      />
+    </div>
+  );
+}
+
+interface QuickPicksProps {
+  /** Name of the field these presets set, used for the accessible button labels. */
+  label: string;
+  picks: { value: number; label: string }[];
+  value: number;
+  onPick: (value: number) => void;
+}
+
+/** Row of one-tap buttons that set the field to a common value. */
+function QuickPicks({ label, picks, value, onPick }: QuickPicksProps) {
+  return (
+    <div className="quick-picks">
+      {picks.map((pick) => (
+        <button
+          key={pick.value}
+          type="button"
+          className={`quick-pick${value === pick.value ? " is-active" : ""}`}
+          aria-pressed={value === pick.value}
+          aria-label={`Set ${label.toLowerCase()} to ${pick.label}`}
+          onClick={() => onPick(pick.value)}
+        >
+          {pick.label}
+        </button>
+      ))}
     </div>
   );
 }

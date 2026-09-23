@@ -449,6 +449,24 @@ body {
 .time-row-controls { display: grid; grid-template-columns: 1fr 100px; gap: 12px; align-items: center; }
 .time-row-controls .ant-slider { margin: 8px 6px; }
 .time-number { width: 100px; }
+.quick-picks { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.quick-pick {
+  all: unset;
+  cursor: pointer;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.quick-pick:hover { color: var(--ink); border-color: var(--line-strong); }
+.quick-pick.is-active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.quick-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .time-summary { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
 .time-summary strong { color: var(--ink); }
 .time-editor { width: 330px; padding-top: 4px; }
