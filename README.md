@@ -142,3 +142,35 @@ Types are duplicated in `server/src/types.ts` and `client/src/types.ts`; move th
 
 npm run add-user -- --email you@example.com --name "Your Name"
 npm run dev
+
+## Deploying to Vercel
+
+The repo deploys as a single Vercel project: the React client is built to static
+assets served by the CDN, and the Express server runs as one serverless function
+mounted at `/api`. Both are on the same origin, so the session cookie keeps
+working unchanged.
+
+Layout:
+
+- `vercel.json` — install/build commands, `client/dist` as the static output, and
+  rewrites sending `/api/*` to the function and everything else to `index.html`.
+- `api/index.mjs` — the function entry; re-exports the Express app from
+  `server/dist/app.js`, which the build command produces.
+- `server/src/app.ts` — builds and exports the app (no `listen`), so the same code
+  runs locally and on Vercel. `server/src/index.ts` is the local entry that
+  migrates and listens.
+
+Environment variables to set on the Vercel project (Production + Preview):
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | Supabase **Session pooler** connection string |
+| `DATABASE_PASSWORD` | database password, if `DATABASE_URL` still contains `[YOUR-PASSWORD]` |
+| `TRUST_PROXY` | `true` — Vercel terminates TLS in front of the function |
+| `PG_POOL_MAX` | `2` — serverless instances should hold very few connections |
+| `SKIP_MIGRATIONS` | optional; `true` once the schema exists, to skip the DDL check on cold starts |
+
+`NODE_ENV=production` is set by Vercel, which turns on secure cookies.
+
+The schema migration is idempotent and runs at most once per function instance,
+on the first `/api` request after a cold start.
