@@ -1,154 +1,121 @@
-import Database from "better-sqlite3";
-import path from "node:path";
-import type { Item, ItemInput, ItemPatch, Settings, SettingsPatch } from "./types.js";
+import pg from "pg";
+import { databaseHost, databaseUrl, sslConfig } from "./env.js";
 
-const DB_PATH = process.env.DB_PATH ?? path.resolve(process.cwd(), "data.sqlite");
+const { Pool, types } = pg;
 
-export const db = new Database(DB_PATH);
-db.pragma("journal_mode = WAL");
+// DATE columns come back as plain "YYYY-MM-DD" strings (no timezone shifting).
+types.setTypeParser(1082, (v) => v);
+// BIGINT / BIGSERIAL ids and COUNT(*) come back as numbers.
+types.setTypeParser(20, (v) => Number(v));
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS items (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    title      TEXT    NOT NULL,
-    area       TEXT    NOT NULL,
-    category   TEXT    NOT NULL DEFAULT '',
-    impact     TEXT    NOT NULL CHECK (impact IN ('P','V')),
-    focus      TEXT    NOT NULL CHECK (focus  IN ('S','L')),
-    notes      TEXT    NOT NULL DEFAULT '',
-    done       INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS settings (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-`);
+const url = databaseUrl();
 
-// Columns added after the first release; add them to existing databases.
-const itemColumns = new Set(db.prepare<[], { name: string }>("PRAGMA table_info(items)").all().map((c) => c.name));
-if (!itemColumns.has("allocated_minutes")) db.exec("ALTER TABLE items ADD COLUMN allocated_minutes INTEGER NOT NULL DEFAULT 0");
-if (!itemColumns.has("spent_minutes")) db.exec("ALTER TABLE items ADD COLUMN spent_minutes INTEGER NOT NULL DEFAULT 0");
-
-interface Row {
-  id: number;
-  title: string;
-  area: string;
-  category: string;
-  impact: "P" | "V";
-  focus: "S" | "L";
-  notes: string;
-  done: number;
-  allocated_minutes: number;
-  spent_minutes: number;
-  created_at: string;
-  updated_at: string;
-}
-
-const toItem = (r: Row): Item => ({
-  id: r.id,
-  title: r.title,
-  area: r.area,
-  category: r.category,
-  impact: r.impact,
-  focus: r.focus,
-  notes: r.notes,
-  done: r.done === 1,
-  allocatedMinutes: r.allocated_minutes,
-  spentMinutes: r.spent_minutes,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
+export const pool = new Pool({
+  connectionString: url,
+  ssl: sslConfig(url),
+  max: Number(process.env.PG_POOL_MAX ?? 8),
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 15_000,
 });
 
-const stmts = {
-  all: db.prepare<[], Row>("SELECT * FROM items ORDER BY done ASC, created_at ASC, id ASC"),
-  byId: db.prepare<[number], Row>("SELECT * FROM items WHERE id = ?"),
-  insert: db.prepare(
-    `INSERT INTO items (title, area, category, impact, focus, notes, done, allocated_minutes, spent_minutes)
-     VALUES (@title, @area, @category, @impact, @focus, @notes, @done, @allocatedMinutes, @spentMinutes)`
-  ),
-  remove: db.prepare("DELETE FROM items WHERE id = ?"),
-  count: db.prepare<[], { n: number }>("SELECT COUNT(*) AS n FROM items"),
-  getSetting: db.prepare<[string], { value: string }>("SELECT value FROM settings WHERE key = ?"),
-  setSetting: db.prepare(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ),
-};
+pool.on("error", (err) => {
+  console.error("Unexpected Postgres client error:", err.message);
+});
 
-export const repo = {
-  list(): Item[] {
-    return stmts.all.all().map(toItem);
-  },
+export const query = <T extends pg.QueryResultRow = pg.QueryResultRow>(text: string, params: unknown[] = []) =>
+  pool.query<T>(text, params);
 
-  get(id: number): Item | undefined {
-    const row = stmts.byId.get(id);
-    return row ? toItem(row) : undefined;
-  },
+const SCHEMA = `
+  CREATE TABLE IF NOT EXISTS users (
+    id            BIGSERIAL PRIMARY KEY,
+    email         TEXT        NOT NULL UNIQUE,
+    name          TEXT        NOT NULL DEFAULT '',
+    password_hash TEXT        NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
 
-  create(input: ItemInput): Item {
-    const info = stmts.insert.run({ ...input, done: input.done ? 1 : 0 });
-    return this.get(Number(info.lastInsertRowid))!;
-  },
+  CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT        PRIMARY KEY,
+    user_id    BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
 
-  update(id: number, patch: ItemPatch): Item | undefined {
-    const existing = this.get(id);
-    if (!existing) return undefined;
+  CREATE TABLE IF NOT EXISTS items (
+    id                BIGSERIAL   PRIMARY KEY,
+    user_id           BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title             TEXT        NOT NULL,
+    area              TEXT        NOT NULL,
+    category          TEXT        NOT NULL DEFAULT '',
+    impact            TEXT        NOT NULL CHECK (impact IN ('P','V')),
+    focus             TEXT        NOT NULL CHECK (focus  IN ('S','L')),
+    notes             TEXT        NOT NULL DEFAULT '',
+    done              BOOLEAN     NOT NULL DEFAULT false,
+    allocated_minutes INTEGER     NOT NULL DEFAULT 0,
+    spent_minutes     INTEGER     NOT NULL DEFAULT 0,
+    progress          SMALLINT    NOT NULL DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
+    deadline          DATE,
+    completed_at      TIMESTAMPTZ,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX IF NOT EXISTS items_user_id_idx ON items(user_id);
+  CREATE INDEX IF NOT EXISTS items_user_deadline_idx ON items(user_id, deadline);
 
-    const columns: Record<keyof ItemPatch, string> = {
-      title: "title",
-      area: "area",
-      category: "category",
-      impact: "impact",
-      focus: "focus",
-      notes: "notes",
-      done: "done",
-      allocatedMinutes: "allocated_minutes",
-      spentMinutes: "spent_minutes",
-    };
+  CREATE TABLE IF NOT EXISTS settings (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key     TEXT   NOT NULL,
+    value   TEXT   NOT NULL,
+    PRIMARY KEY (user_id, key)
+  );
 
-    const sets: string[] = [];
-    const params: Record<string, unknown> = { id };
-    for (const key of Object.keys(patch) as (keyof ItemPatch)[]) {
-      const value = patch[key];
-      if (value === undefined) continue;
-      sets.push(`${columns[key]} = @${key}`);
-      params[key] = key === "done" ? (value ? 1 : 0) : value;
+  -- Block Supabase's public REST/GraphQL API (anon / authenticated roles) from reading these
+  -- tables. The app connects as the table owner, which is unaffected by RLS.
+  ALTER TABLE users    ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE items    ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+`;
+
+/** Creates the schema if it doesn't exist. Safe to run on every start. */
+export async function migrate(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(SCHEMA);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Human-readable advice for the most common connection failures. */
+export function connectionHint(err: unknown): string {
+  const e = err as NodeJS.ErrnoException & { message?: string };
+  const host = databaseHost(url);
+  const lines = [`Could not connect to Postgres at ${host}: ${e?.message ?? String(err)}`];
+  if (e?.code === "ENETUNREACH" || e?.code === "ENOTFOUND" || e?.code === "EHOSTUNREACH") {
+    if (host.endsWith(".supabase.co")) {
+      lines.push(
+        "Supabase's direct connection (db.<ref>.supabase.co) is IPv6-only. If your network has no IPv6,",
+        "use the Session pooler string from Supabase → Project Settings → Database → Connection string",
+        "(it looks like postgresql://postgres.<ref>:[YOUR-PASSWORD]@aws-0-<region>.pooler.supabase.com:5432/postgres)."
+      );
+    } else {
+      lines.push("Check that the host is reachable from this machine.");
     }
-    if (sets.length === 0) return existing;
+  } else if (e?.code === "28P01" || /password authentication failed/i.test(e?.message ?? "")) {
+    lines.push("The database password is wrong. Set DATABASE_PASSWORD (or fix DATABASE_URL) in server/.env.");
+  } else if (e?.code === "ECONNREFUSED") {
+    lines.push("Nothing is listening on that host/port. Is Postgres running?");
+  } else if (/self.signed|certificate/i.test(e?.message ?? "")) {
+    lines.push("TLS verification failed. Set DATABASE_CA_CERT to the server's CA bundle, or leave it unset to skip verification.");
+  }
+  return lines.join("\n");
+}
 
-    sets.push("updated_at = datetime('now')");
-    db.prepare(`UPDATE items SET ${sets.join(", ")} WHERE id = @id`).run(params);
-    return this.get(id);
-  },
-
-  remove(id: number): boolean {
-    return stmts.remove.run(id).changes > 0;
-  },
-
-  count(): number {
-    return stmts.count.get()!.n;
-  },
-
-  insertMany(items: ItemInput[]): void {
-    const tx = db.transaction((rows: ItemInput[]) => {
-      for (const r of rows) stmts.insert.run({ ...r, done: r.done ? 1 : 0 });
-    });
-    tx(items);
-  },
-};
-
-/** Mon–Wed at ~7 h plus Thu–Sat at ~12 h, matching the focus slots shown in the UI. */
-const DEFAULT_WEEKLY_MINUTES = (3 * 7 + 3 * 12) * 60;
-
-export const settingsRepo = {
-  get(): Settings {
-    const row = stmts.getSetting.get("weekly_minutes");
-    return { weeklyMinutes: row ? Number(row.value) : DEFAULT_WEEKLY_MINUTES };
-  },
-
-  update(patch: SettingsPatch): Settings {
-    if (patch.weeklyMinutes !== undefined) stmts.setSetting.run("weekly_minutes", String(patch.weeklyMinutes));
-    return this.get();
-  },
-};
+export const closePool = () => pool.end();

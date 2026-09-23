@@ -1,8 +1,9 @@
 import type { Focus, Impact, QuadrantKey } from "./types";
 
+/** Colors come from the active theme (see theme.tsx) so every palette can tune them. */
 export const IMPACT: Record<Impact, { name: string; hint: string; color: string; tint: string }> = {
-  P: { name: "Pain killer", hint: "Immediate", color: "#B42318", tint: "#FEF3F2" },
-  V: { name: "Vitamin", hint: "Low priority", color: "#2F7D6D", tint: "#F0F7F5" },
+  P: { name: "Pain killer", hint: "Immediate", color: "var(--p)", tint: "var(--p-soft)" },
+  V: { name: "Vitamin", hint: "Low priority", color: "var(--v)", tint: "var(--v-soft)" },
 };
 
 export const FOCUS: Record<Focus, { name: string; slot: string }> = {
@@ -17,4 +18,4 @@ export const QUADRANTS: { key: QuadrantKey; impact: Impact; focus: Focus; advice
   { key: "VL", impact: "V", focus: "L", advice: "Schedule when there's room" },
 ];
 
-export const DEFAULT_AREAS = ["Company", "Academia", "Job"];
+export const DEFAULT_AREAS = ["Company", "Academia", "Job", "Family"];

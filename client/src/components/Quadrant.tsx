@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { Button } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
-import type { Focus, Impact, Item } from "../types";
+import type { Focus, Impact, Item, TimePatch } from "../types";
 import { FOCUS, IMPACT } from "../labels";
 import { ItemRow } from "./ItemRow";
 
@@ -11,13 +11,12 @@ interface Props {
   focus: Focus;
   advice: string;
   items: Item[];
+  weeklyMinutes: number;
   onAdd: (impact: Impact, focus: Focus) => void;
   onDropItem: (id: number, impact: Impact, focus: Focus) => void;
-  onToggle: (item: Item) => void;
-  onEdit: (item: Item) => void;
-  onDelete: (item: Item) => void;
-  onSaveTime: (item: Item, allocatedMinutes: number, spentMinutes: number) => void;
-  weeklyMinutes: number;
+  onOpen: (item: Item) => void;
+  onToggleDone: (item: Item) => void;
+  onSaveTime: (item: Item, patch: TimePatch) => void;
 }
 
 export function Quadrant({ code, impact, focus, advice, items, onAdd, onDropItem, ...rowHandlers }: Props) {
@@ -31,7 +30,7 @@ export function Quadrant({ code, impact, focus, advice, items, onAdd, onDropItem
   return (
     <section
       className={`quadrant${over ? " is-over" : ""}`}
-      style={{ "--accent": IMPACT[impact].color, "--tint": IMPACT[impact].tint } as React.CSSProperties}
+      style={{ "--q-accent": IMPACT[impact].color, "--q-tint": IMPACT[impact].tint } as CSSProperties}
       onDragOver={(e) => {
         e.preventDefault();
         setOver(true);
@@ -48,22 +47,24 @@ export function Quadrant({ code, impact, focus, advice, items, onAdd, onDropItem
       aria-label={`${IMPACT[impact].name}, ${FOCUS[focus].name}`}
     >
       <header className="quadrant-head">
-        <div>
-          <h2>
-            <span className="code">{code}</span>
-            {advice}
-          </h2>
-          <p className="slot">
-            {open} open<span className="slot-sep" />{FOCUS[focus].slot}
-          </p>
+        <div className="quadrant-title">
+          <span className="label-code">{code}</span>
+          <div>
+            <h2>{advice}</h2>
+            <p className="slot">
+              {open} open
+              <span className="slot-sep" />
+              {FOCUS[focus].slot}
+            </p>
+          </div>
         </div>
-        <Button size="small" icon={<PlusOutlined />} onClick={() => onAdd(impact, focus)}>
+        <Button size="small" type="text" icon={<PlusOutlined />} onClick={() => onAdd(impact, focus)} aria-label={`Add a ${code} task`}>
           Add
         </Button>
       </header>
 
       {items.length === 0 ? (
-        <p className="empty">Nothing here. Add an item or drag one in.</p>
+        <p className="empty">Nothing here. Add a task or drag one in.</p>
       ) : (
         <div className="groups">
           {[...groups].map(([area, list]) => (

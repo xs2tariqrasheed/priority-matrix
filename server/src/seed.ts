@@ -1,9 +1,17 @@
 /**
- * Seeds the database with the initial list of items.
- * Run with: npm run seed   (add --force to wipe existing items first)
+ * Seeds a user's task list with the initial items.
+ *
+ *   npm run seed -- --email you@example.com            (skips if the user already has items)
+ *   npm run seed -- --email you@example.com --force    (replaces the user's items)
+ *
+ * --email can be omitted when exactly one user exists.
  */
-import { db, repo } from "./db.js";
+import "./env.js";
+import { closePool, connectionHint, migrate } from "./db.js";
+import { usersRepo } from "./auth.js";
+import { itemsRepo } from "./repo.js";
 import type { ItemInput } from "./types.js";
+import { parseArgs } from "./cli.js";
 
 type Label = "PS" | "PL" | "VS" | "VL";
 
@@ -40,14 +48,42 @@ const seed: [area: string, category: string, title: string, label: Label][] = [
   ["Job", "", "Showcase projects", "PL"],
 ];
 
-const force = process.argv.includes("--force");
+const args = parseArgs(process.argv.slice(2));
+const force = args.force === true;
 
-if (repo.count() > 0 && !force) {
-  console.log(`Database already has ${repo.count()} items. Use "npm run seed -- --force" to replace them.`);
-  process.exit(0);
+try {
+  await migrate();
+} catch (e) {
+  console.error(connectionHint(e));
+  process.exit(1);
 }
 
-if (force) db.exec("DELETE FROM items; DELETE FROM sqlite_sequence WHERE name = 'items';");
+let user = typeof args.email === "string" ? await usersRepo.findByEmail(args.email) : undefined;
+if (!user) {
+  const users = await usersRepo.list();
+  if (typeof args.email === "string") {
+    console.error(`No user with email ${args.email}. Create one first: npm run add-user -- --email ${args.email}`);
+  } else if (users.length === 1) {
+    user = await usersRepo.findByEmail(users[0].email);
+  } else if (users.length === 0) {
+    console.error("No users yet. Create one first: npm run add-user -- --email you@example.com");
+  } else {
+    console.error("Several users exist; pass --email to choose one:");
+    for (const u of users) console.error(`  ${u.email}`);
+  }
+  if (!user) {
+    await closePool();
+    process.exit(1);
+  }
+}
+
+const existing = await itemsRepo.count(user.id);
+if (existing > 0 && !force) {
+  console.log(`${user.email} already has ${existing} items. Use "npm run seed -- --email ${user.email} --force" to replace them.`);
+  await closePool();
+  process.exit(0);
+}
+if (force) await itemsRepo.removeAll(user.id);
 
 const rows: ItemInput[] = seed.map(([area, category, title, label]) => ({
   title,
@@ -59,7 +95,10 @@ const rows: ItemInput[] = seed.map(([area, category, title, label]) => ({
   done: false,
   allocatedMinutes: 0,
   spentMinutes: 0,
+  progress: 0,
+  deadline: null,
 }));
 
-repo.insertMany(rows);
-console.log(`Seeded ${rows.length} items.`);
+await itemsRepo.insertMany(user.id, rows);
+console.log(`Seeded ${rows.length} items for ${user.email}.`);
+await closePool();

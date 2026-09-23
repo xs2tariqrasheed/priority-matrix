@@ -12,5 +12,8 @@ export function formatMinutes(total: number): string {
   return `${sign}${h}h`;
 }
 
-export const progressPercent = (spent: number, allocated: number) =>
-  allocated > 0 ? Math.round((spent / allocated) * 100) : 0;
+/** Rounds to the nearest 15-minute step and clamps at zero. */
+export const snapMinutes = (minutes: number) => Math.max(0, Math.round(minutes / STEP) * STEP);
+
+export const hoursToMinutes = (hours: number) => snapMinutes(hours * 60);
+export const minutesToHours = (minutes: number) => Math.round((minutes / 60) * 100) / 100;

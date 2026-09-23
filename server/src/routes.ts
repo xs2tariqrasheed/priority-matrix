@@ -1,9 +1,53 @@
-import { Router, type Request, type Response, type NextFunction } from "express";
+import { Router, type NextFunction, type Request, type Response } from "express";
 import { ZodError } from "zod";
-import { repo, settingsRepo } from "./db.js";
-import { ItemInput, ItemPatch, SettingsPatch } from "./types.js";
+import { SESSION_COOKIE, cookieOptions, loginThrottle, requireAuth, sessionsRepo, usersRepo, verifyPassword } from "./auth.js";
+import { itemsRepo, settingsRepo } from "./repo.js";
+import { ItemInput, ItemPatch, LoginInput, SettingsPatch } from "./types.js";
+
+/* ---------- Auth ---------- */
+
+export const auth = Router();
+
+// A real scrypt hash of a random string; verifying against it keeps timing the same for unknown emails.
+const DUMMY_HASH =
+  "scrypt$16384$8$1$0jK8Bl1GzKZFEN9nVvzCZg$Cn8gk6q4tgZK1n2wQ2C9yoq0v1iX4Q4mQe2JzPqYQd4eY1KHzq9Q7pH5FQ4a0oQ9XxJd8u3sE1a4uR3n6P1Zvw";
+
+auth.post("/login", async (req, res) => {
+  const { email, password } = LoginInput.parse(req.body);
+  const key = loginThrottle.key(req.ip ?? "unknown", email);
+  if (loginThrottle.blocked(key)) {
+    res.status(429).json({ error: "Too many failed attempts. Try again in 15 minutes." });
+    return;
+  }
+  const user = await usersRepo.findByEmail(email);
+  const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
+  if (!user || !ok) {
+    loginThrottle.fail(key);
+    res.status(401).json({ error: "Invalid email or password" });
+    return;
+  }
+  loginThrottle.clear(key);
+  const token = await sessionsRepo.create(user.id);
+  res.cookie(SESSION_COOKIE, token, cookieOptions());
+  const { passwordHash: _omit, ...safe } = user;
+  res.json({ user: safe });
+});
+
+auth.post("/logout", async (req, res) => {
+  const token = (req.cookies as Record<string, string | undefined>)?.[SESSION_COOKIE];
+  if (token) await sessionsRepo.remove(token);
+  res.clearCookie(SESSION_COOKIE, { ...cookieOptions(), maxAge: undefined });
+  res.status(204).end();
+});
+
+auth.get("/me", requireAuth, (req, res) => {
+  res.json({ user: req.user });
+});
+
+/* ---------- Items ---------- */
 
 export const items = Router();
+items.use(requireAuth);
 
 const parseId = (req: Request, res: Response): number | null => {
   const id = Number(req.params.id);
@@ -14,53 +58,53 @@ const parseId = (req: Request, res: Response): number | null => {
   return id;
 };
 
-items.get("/", (_req, res) => {
-  res.json(repo.list());
+items.get("/", async (req, res) => {
+  res.json(await itemsRepo.list(req.user!.id));
 });
 
-items.get("/:id", (req, res) => {
+items.get("/:id", async (req, res) => {
   const id = parseId(req, res);
   if (id === null) return;
-  const item = repo.get(id);
+  const item = await itemsRepo.get(req.user!.id, id);
   if (!item) return void res.status(404).json({ error: `Item ${id} not found` });
   res.json(item);
 });
 
-items.post("/", (req, res) => {
+items.post("/", async (req, res) => {
   const input = ItemInput.parse(req.body);
-  res.status(201).json(repo.create(input));
+  res.status(201).json(await itemsRepo.create(req.user!.id, input));
 });
 
-items.patch("/:id", (req, res) => {
+items.patch("/:id", async (req, res) => {
   const id = parseId(req, res);
   if (id === null) return;
   const patch = ItemPatch.parse(req.body);
-  const existing = repo.get(id);
-  if (!existing) return void res.status(404).json({ error: `Item ${id} not found` });
-  const allocated = patch.allocatedMinutes ?? existing.allocatedMinutes;
-  const spent = patch.spentMinutes ?? existing.spentMinutes;
-  if (spent > allocated) return void res.status(400).json({ error: "Progress can't exceed the allocated time" });
-  const item = repo.update(id, patch);
+  const item = await itemsRepo.update(req.user!.id, id, patch);
   if (!item) return void res.status(404).json({ error: `Item ${id} not found` });
   res.json(item);
 });
 
-items.delete("/:id", (req, res) => {
+items.delete("/:id", async (req, res) => {
   const id = parseId(req, res);
   if (id === null) return;
-  if (!repo.remove(id)) return void res.status(404).json({ error: `Item ${id} not found` });
+  if (!(await itemsRepo.remove(req.user!.id, id))) return void res.status(404).json({ error: `Item ${id} not found` });
   res.status(204).end();
 });
 
+/* ---------- Settings ---------- */
+
 export const settings = Router();
+settings.use(requireAuth);
 
-settings.get("/", (_req, res) => {
-  res.json(settingsRepo.get());
+settings.get("/", async (req, res) => {
+  res.json(await settingsRepo.get(req.user!.id));
 });
 
-settings.patch("/", (req, res) => {
-  res.json(settingsRepo.update(SettingsPatch.parse(req.body)));
+settings.patch("/", async (req, res) => {
+  res.json(await settingsRepo.update(req.user!.id, SettingsPatch.parse(req.body)));
 });
+
+/* ---------- Errors ---------- */
 
 export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
   if (err instanceof ZodError) {
@@ -68,6 +112,10 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
       error: "Validation failed",
       issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
     });
+    return;
+  }
+  if (err instanceof SyntaxError && "status" in err && err.status === 400) {
+    res.status(400).json({ error: "Malformed JSON body" });
     return;
   }
   console.error(err);

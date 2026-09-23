@@ -1,27 +1,44 @@
-import { Progress } from "antd";
+import type { ComponentPropsWithRef } from "react";
+import { PlusOutlined } from "@ant-design/icons";
 import type { Item } from "../types";
-import { formatMinutes, progressPercent } from "../time";
+import { formatMinutes } from "../time";
+import { ProgressRing } from "./ProgressRing";
 
-/** Compact "remaining time" readout with a progress ring; clickable. */
-export function TimeChip({ item }: { item: Item }) {
+type Props = { item: Item } & Omit<ComponentPropsWithRef<"button">, "children">;
+
+/**
+ * Compact progress ring + time readout. Extra props (including the click handler and ref
+ * the surrounding TimeEditor popover attaches) are forwarded to the button.
+ */
+export function TimeChip({ item, className, ...rest }: Props) {
   const { allocatedMinutes: allocated, spentMinutes: spent } = item;
-  if (allocated === 0) {
+  const progress = item.done ? 100 : item.progress;
+  if (!allocated && !spent && !progress) {
     return (
-      <button type="button" className="time-chip is-empty" aria-label={`Allocate time to "${item.title}"`}>
-        + time
+      <button
+        type="button"
+        {...rest}
+        className={`time-chip is-empty${className ? ` ${className}` : ""}`}
+        aria-label={`Set time for "${item.title}"`}
+      >
+        <PlusOutlined /> time
       </button>
     );
   }
-  const pct = progressPercent(spent, allocated);
   return (
     <button
       type="button"
-      className="time-chip"
-      aria-label={`${formatMinutes(allocated - spent)} left of ${formatMinutes(allocated)}, ${pct}% done. Edit time`}
-      title={`${formatMinutes(spent)} of ${formatMinutes(allocated)} done`}
+      {...rest}
+      className={`time-chip${className ? ` ${className}` : ""}`}
+      aria-label={`${progress}% complete, ${formatMinutes(spent)} spent${allocated ? ` of ${formatMinutes(allocated)} allocated` : ""}. Edit time and progress`}
     >
-      <Progress type="circle" size={14} percent={pct} showInfo={false} strokeWidth={14} />
-      {formatMinutes(allocated - spent)} left
+      <ProgressRing percent={progress} />
+      <span className="time-chip-pct">{progress}%</span>
+      <span className="time-chip-sep" />
+      <span className="time-chip-time">
+        {formatMinutes(spent)}
+        {allocated ? <span className="time-chip-of"> / {formatMinutes(allocated)}</span> : null}
+      </span>
     </button>
   );
 }

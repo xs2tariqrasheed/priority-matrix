@@ -8,19 +8,25 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "seed": "tsx src/seed.ts",
-    "typecheck": "tsc --noEmit"
+    "add-user": "tsx src/scripts/add-user.ts",
+    "typecheck": "tsc --noEmit",
+    "set-password": "tsx src/scripts/set-password.ts",
+    "reset-password": "tsx src/scripts/set-password.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
+    "dotenv": "^18.0.3",
     "express": "^5.2.1",
+    "pg": "^8.23.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^9.6.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.2",
+    "@types/pg": "^8.23.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
