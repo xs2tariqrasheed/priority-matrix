@@ -21,14 +21,21 @@ export function weekRange(offset = 0): DateRange {
   return { start: start.format(ISO), end: start.add(6, "day").format(ISO) };
 }
 
+/** Today plus the following `days - 1` days, e.g. `nextDays(3)` is today, tomorrow and the day after. */
+export function nextDays(days: number): DateRange {
+  const start = dayjs();
+  return { start: start.format(ISO), end: start.add(days - 1, "day").format(ISO) };
+}
+
 export const isSameRange = (a: DateRange, b: DateRange) => a.start === b.start && a.end === b.end;
 
-export type RangePreset = "this" | "next" | "last" | "custom";
+export type RangePreset = "this" | "next" | "last" | "next3" | "custom";
 
 export function presetOf(r: DateRange): RangePreset {
   if (isSameRange(r, weekRange(0))) return "this";
   if (isSameRange(r, weekRange(1))) return "next";
   if (isSameRange(r, weekRange(-1))) return "last";
+  if (isSameRange(r, nextDays(3))) return "next3";
   return "custom";
 }
 
@@ -68,6 +75,8 @@ export function rangeTitle(r: DateRange): string {
       return "Next week";
     case "last":
       return "Last week";
+    case "next3":
+      return "Next 3 days";
     default:
       return rangeDays(r) === 7 ? "Week" : rangeDays(r) === 1 ? "Day" : "Custom range";
   }

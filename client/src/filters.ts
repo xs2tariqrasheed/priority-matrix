@@ -64,6 +64,20 @@ export function inDateScope(i: Item, f: Filters): boolean {
   return f.includeOverdue && isOverdue(i);
 }
 
+/**
+ * Whether a task books time inside `r`: it is due in the range, or it was completed in it.
+ * Overdue carry-over and undated tasks are deliberately left out — the weekly budget answers
+ * "how full is this week", not "how much work exists".
+ */
+export function booksTimeIn(i: Item, r: DateRange): boolean {
+  if (i.deadline !== null && inRange(i.deadline, r)) return true;
+  const done = completedOn(i);
+  return done !== null && inRange(done, r);
+}
+
+/** The tasks the weekly budget counts; area, label and search filters don't narrow it. */
+export const budgetItems = (items: Item[], r: DateRange): Item[] => items.filter((i) => booksTimeIn(i, r));
+
 export function matchesFilters(i: Item, f: Filters): boolean {
   const q = f.query.trim().toLowerCase();
   return (

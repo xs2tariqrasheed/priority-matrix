@@ -1,3 +1,4 @@
+import { useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { Progress, Table, Tooltip, type TableColumnsType, type TableProps } from "antd";
 import { FileTextOutlined } from "@ant-design/icons";
 import type { Item, TimePatch } from "../types";
@@ -5,6 +6,7 @@ import { IMPACT } from "../labels";
 import { formatMinutes } from "../time";
 import { type Sort, type SortKey, DEFAULT_SORT } from "../filters";
 import { isInteractiveClick } from "../lib/dom";
+import type { CellSelection } from "../lib/selection";
 import { DeadlineChip } from "./DeadlineChip";
 import { MarkDoneButton } from "./MarkDoneButton";
 import { TimeEditor } from "./TimeEditor";
@@ -14,6 +16,8 @@ interface Props {
   weeklyMinutes: number;
   sort: Sort;
   onSortChange: (sort: Sort) => void;
+  /** Spreadsheet-style selection of the Allocated column; totals show in the status bar. */
+  selection: CellSelection;
   onOpen: (item: Item) => void;
   onToggleDone: (item: Item) => void;
   onSaveTime: (item: Item, patch: TimePatch) => void;
@@ -23,7 +27,35 @@ const SORTABLE: SortKey[] = ["title", "area", "deadline", "allocated", "spent", 
 const orderFor = (key: SortKey, sort: Sort) => (sort.key === key ? (sort.dir === "asc" ? "ascend" : "descend") : null);
 
 /** Sorted table; the rows themselves open the task, column headers drive the shared sort. */
-export function ListView({ items, weeklyMinutes, sort, onSortChange, onOpen, onToggleDone, onSaveTime }: Props) {
+export function ListView({ items, weeklyMinutes, sort, onSortChange, selection, onOpen, onToggleDone, onSaveTime }: Props) {
+  const cells = useRef(new Map<number, HTMLButtonElement>());
+
+  const focusCell = (id: number | null) => {
+    if (id !== null) cells.current.get(id)?.focus();
+  };
+
+  const onCellMouseDown = (e: MouseEvent<HTMLButtonElement>, id: number) => {
+    // Keep the drag from selecting the table's text, but still take focus for keyboard use.
+    e.preventDefault();
+    e.currentTarget.focus();
+    selection.start(id, e, true);
+  };
+
+  const onCellKeyDown = (e: KeyboardEvent<HTMLButtonElement>, id: number) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      focusCell(selection.step(id, e.key === "ArrowDown" ? 1 : -1, e.shiftKey));
+    } else if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      selection.start(id, e);
+    } else if (e.key === "Escape") {
+      selection.clear();
+    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      if (!selection.allSelected) selection.toggleAll();
+    }
+  };
+
   const columns: TableColumnsType<Item> = [
     {
       title: "Task",
@@ -73,10 +105,32 @@ export function ListView({ items, weeklyMinutes, sort, onSortChange, onOpen, onT
     {
       title: "Allocated",
       key: "allocated",
-      width: 124,
+      width: 140,
       sorter: true,
       sortOrder: orderFor("allocated", sort),
-      render: (_, it) => (it.allocatedMinutes ? <span className="num">{formatMinutes(it.allocatedMinutes)}</span> : <span className="muted">—</span>),
+      render: (_, it) => {
+        const selected = selection.isSelected(it.id);
+        return (
+          <button
+            type="button"
+            ref={(el) => {
+              if (el) cells.current.set(it.id, el);
+              else cells.current.delete(it.id);
+            }}
+            className={`cell-alloc${selected ? " is-selected" : ""}`}
+            aria-pressed={selected}
+            aria-label={`Allocated ${formatMinutes(it.allocatedMinutes)} for "${it.title}"; select to total`}
+            onMouseDown={(e) => onCellMouseDown(e, it.id)}
+            onMouseEnter={(e) => {
+              // Only while the primary button is still held, in case a mouseup was missed.
+              if (e.buttons === 1) selection.extendTo(it.id);
+            }}
+            onKeyDown={(e) => onCellKeyDown(e, it.id)}
+          >
+            {it.allocatedMinutes ? <span className="num">{formatMinutes(it.allocatedMinutes)}</span> : <span className="muted">—</span>}
+          </button>
+        );
+      },
     },
     {
       title: "Time spent",

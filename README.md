@@ -65,12 +65,13 @@ Open http://localhost:5174 and sign in. Vite proxies `/api` to the Express serve
 
 - **Two views** of the same tasks: the 2×2 matrix (drag a task to another quadrant to relabel it) and a sortable list. Click any task to open its detail panel; edit, mark done, or delete from there.
 - **Deadline, time & progress per task.** *Allocated* is the time budgeted, *Time spent* is what you actually worked (it may exceed the allocation), and *Progress* (0–100 %) is tracked separately. The quick editor on a task's time chip changes all three without opening the form.
-- **Date range** in the header, shared by Tasks and Reports. Defaults to **This week** (Monday–Sunday); quick chips for This week / Next week, arrows to step, and a calendar picker with presets for anything else. Tasks are in range when their deadline falls inside it (or, for completed tasks, when they were completed inside it).
+- **Date range** in the header, shared by Tasks and Reports. Defaults to **This week** (Monday–Sunday); quick chips for This week / **Next 3 days** (today plus the next two days) / Next week, arrows to step, and a calendar picker with presets for anything else. Tasks are in range when their deadline falls inside it (or, for completed tasks, when they were completed inside it).
 - **Show** menu: keep *overdue* open tasks visible whatever the range, include tasks with *no deadline*, and reveal *completed* tasks so they can be reopened.
 - **Sort** by deadline (nearest first, undated last, done at the bottom), title, area, progress, allocated, time spent or date added. List column headers drive the same sort.
 - **Mark done / Mark undone** buttons with a confirmation step (no checkboxes). Completion time is recorded.
 - **Reports**: overall progress, completed vs total, overdue count, time spent vs allocated, a per-area breakdown, and clickable overdue and completed lists, all for the selected range and filters.
-- **Weekly budget** card ("Available this week"): editable weekly hours with allocated, done, remaining and unallocated/overbooked totals across all tasks.
+- **Weekly budget** card ("Available this week"): editable weekly hours with allocated, done, remaining and unallocated/overbooked totals. It counts only the tasks that book time in the selected range — due in it, or completed in it — so overdue carry-over and later weeks never inflate it, and the area, label and search filters don't narrow it. A range that isn't a whole week gets a pro-rated share of the weekly hours (three days of a 29 h week = 12 h 30 m).
+- **Status bar** under the list view: totals the *Allocated* column the way a spreadsheet does. Click a cell, drag or Shift-click for a range, ⌘/Ctrl-click to add one, ↑/↓ (with Shift to extend) to move, Esc to clear, or *Select column* for all of them; the bar shows sum, cell count, average and time spent for the selection, and the whole visible column when nothing is selected.
 - **Areas**: Company, Academia, Job and Family are suggested; type any other area when adding a task.
 - **Three dark themes** (Graphite, Midnight, Ember) from the paint icon in the header; the choice is remembered per browser.
 - **Sign-in only** authentication with HttpOnly session cookies (30 days), scrypt password hashes and login throttling.
@@ -120,7 +121,8 @@ client/src/
   App.tsx            auth gate + workspace state (items, filters, drawer)
   theme.tsx          the three palettes; drives CSS variables and Ant Design tokens
   auth.tsx           session state (me / login / logout)
-  filters.ts         date-range scope, filters and sorting
+  filters.ts         date-range scope, budget scope, filters and sorting
+  lib/selection.ts   spreadsheet-style cell selection for the list view
   reports.ts         report aggregation
   dates.ts           week ranges, deadline urgency, formatting (Monday-first)
   components/
@@ -129,7 +131,8 @@ client/src/
     ReportsPage.tsx  KPIs, by-area table, overdue and completed lists
     ItemDrawer.tsx   task detail / edit / create side panel
     ItemForm.tsx     task form (deadline picker, time & progress)
-    ListView.tsx     sortable table
+    ListView.tsx     sortable table with selectable Allocated cells
+    StatusBar.tsx    sticky footer totalling the selected cells
     Quadrant.tsx, ItemRow.tsx   matrix cells and rows
     TimeEditor.tsx, TimeFields.tsx   quick editor for allocated / spent / progress
     DateRangeBar.tsx, FilterBar.tsx, ThemeSwitcher.tsx, LoginPage.tsx

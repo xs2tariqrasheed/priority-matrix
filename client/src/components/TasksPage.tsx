@@ -4,11 +4,13 @@ import { PlusOutlined } from "@ant-design/icons";
 import type { Focus, Impact, Item, TimePatch } from "../types";
 import { FOCUS, IMPACT, QUADRANTS } from "../labels";
 import { formatRange, inRange, rangeTitle } from "../dates";
-import { applyFilters, isOverdue, sortItems, type Filters, type Sort } from "../filters";
+import { applyFilters, budgetItems, isOverdue, sortItems, type Filters, type Sort } from "../filters";
+import { useCellSelection } from "../lib/selection";
 import type { FormDefaults } from "./ItemForm";
 import { FilterBar, type View } from "./FilterBar";
 import { ListView } from "./ListView";
 import { Quadrant } from "./Quadrant";
+import { StatusBar } from "./StatusBar";
 import { WeeklyBudget } from "./WeeklyBudget";
 
 interface Props {
@@ -48,8 +50,15 @@ export function TasksPage({
   const dueCount = visible.filter((i) => !i.done && i.deadline !== null && inRange(i.deadline, filters.range)).length;
   const rowHandlers = { weeklyMinutes, onOpen, onToggleDone, onSaveTime };
 
+  // The budget counts what is booked in the selected range, whatever the area, label or search filters say.
+  const budgeted = useMemo(() => budgetItems(items, filters.range), [items, filters.range]);
+
+  const rowIds = useMemo(() => visible.map((i) => i.id), [visible]);
+  const selection = useCellSelection(rowIds);
+  const isList = view === "list";
+
   return (
-    <div className="page">
+    <div className={`page${isList ? " has-status-bar" : ""}`}>
       <div className="page-head">
         <div>
           <h1>Tasks</h1>
@@ -74,17 +83,21 @@ export function TasksPage({
         </Button>
       </div>
 
-      <WeeklyBudget weeklyMinutes={weeklyMinutes} items={items} onChangeWeekly={onWeeklyChange} />
+      <WeeklyBudget weeklyMinutes={weeklyMinutes} items={budgeted} range={filters.range} onChangeWeekly={onWeeklyChange} />
 
       <FilterBar variant="tasks" filters={filters} onChange={onFiltersChange} areas={areas} view={view} onViewChange={onViewChange} />
 
-      {view === "list" ? (
-        <ListView
-          items={visible}
-          sort={filters.sort}
-          onSortChange={(sort: Sort) => onFiltersChange({ sort })}
-          {...rowHandlers}
-        />
+      {isList ? (
+        <>
+          <ListView
+            items={visible}
+            sort={filters.sort}
+            onSortChange={(sort: Sort) => onFiltersChange({ sort })}
+            selection={selection}
+            {...rowHandlers}
+          />
+          <StatusBar items={visible} selection={selection} />
+        </>
       ) : (
         <>
           <div className="matrix">
