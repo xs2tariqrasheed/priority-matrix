@@ -1,21 +1,27 @@
 import { useState } from "react";
-import { Button, InputNumber, Popover, Progress } from "antd";
+import { Button, InputNumber, Popover, Progress, Tooltip } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import type { Item } from "../types";
-import { STEP, formatMinutes } from "../time";
+import { formatRange, rangeDays, type DateRange } from "../dates";
+import { STEP, formatMinutes, snapMinutes } from "../time";
 
 interface Props {
   weeklyMinutes: number;
+  /** Only the tasks that book time inside `range` (see `budgetItems`). */
   items: Item[];
+  range: DateRange;
   onChangeWeekly: (minutes: number) => Promise<void>;
 }
 
-/** Weekly available time and how much of it is allocated to tasks and already worked. */
-export function WeeklyBudget({ weeklyMinutes, items, onChangeWeekly }: Props) {
+/** Available time for the selected range and how much of it is allocated to tasks and already worked. */
+export function WeeklyBudget({ weeklyMinutes, items, range, onChangeWeekly }: Props) {
+  const days = rangeDays(range);
+  // A range that isn't a whole week gets a pro-rated share of the weekly setting.
+  const available = days === 7 ? weeklyMinutes : snapMinutes((weeklyMinutes / 7) * days);
   const allocated = items.reduce((sum, i) => sum + i.allocatedMinutes, 0);
   const spent = items.reduce((sum, i) => sum + i.spentMinutes, 0);
-  const free = weeklyMinutes - allocated;
-  const pct = (m: number) => (weeklyMinutes > 0 ? Math.min(100, (m / weeklyMinutes) * 100) : 0);
+  const free = available - allocated;
+  const pct = (m: number) => (available > 0 ? Math.min(100, (m / available) * 100) : 0);
 
   const [editing, setEditing] = useState(false);
   const [hours, setHours] = useState<number | null>(weeklyMinutes / 60);
@@ -34,11 +40,13 @@ export function WeeklyBudget({ weeklyMinutes, items, onChangeWeekly }: Props) {
   };
 
   return (
-    <section className="budget" aria-label="Weekly time">
+    <section className="budget" aria-label="Time budget">
       <div className="budget-head">
         <div className="budget-available">
-          <span>Available this week</span>
-          <strong>{formatMinutes(weeklyMinutes)}</strong>
+          <span>{days === 7 ? "Available this week" : `Available · ${days} ${days === 1 ? "day" : "days"}`}</span>
+          <Tooltip title={days === 7 ? undefined : `Pro-rated from ${formatMinutes(weeklyMinutes)} a week`}>
+            <strong>{formatMinutes(available)}</strong>
+          </Tooltip>
           <Popover
             trigger="click"
             open={editing}
@@ -93,8 +101,11 @@ export function WeeklyBudget({ weeklyMinutes, items, onChangeWeekly }: Props) {
         success={{ percent: pct(spent) }}
         status={free < 0 ? "exception" : "normal"}
         showInfo={false}
-        aria-label={`${formatMinutes(allocated)} of ${formatMinutes(weeklyMinutes)} allocated, ${formatMinutes(spent)} done`}
+        aria-label={`${formatMinutes(allocated)} of ${formatMinutes(available)} allocated, ${formatMinutes(spent)} done`}
       />
+      <p className="budget-foot">
+        Counting {items.length} {items.length === 1 ? "task" : "tasks"} due {formatRange(range)}, across every area.
+      </p>
     </section>
   );
 }

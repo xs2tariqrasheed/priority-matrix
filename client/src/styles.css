@@ -249,6 +249,7 @@ body {
 .budget-stats .is-over dd { color: var(--danger); }
 .budget-edit { display: flex; gap: 8px; }
 .budget .ant-progress { margin: 8px 0 0; }
+.budget-foot { margin: 6px 0 0; color: var(--faint); font-size: 12px; }
 
 /* ---------- Matrix ---------- */
 .matrix { display: grid; grid-template-columns: 40px 1fr 1fr; gap: 14px; }
@@ -520,6 +521,58 @@ body {
 .cell-progress .ant-progress { margin: 0; line-height: 0; }
 .cell-progress .ant-progress-outer { display: block; }
 .table-empty { padding: 36px 16px; color: var(--faint); }
+
+/* Selectable Allocated cells (spreadsheet-style totalling in the status bar) */
+.cell-alloc {
+  all: unset;
+  cursor: cell;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 8px;
+  margin: -3px -8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.12s, border-color 0.12s;
+}
+.cell-alloc:hover { background: var(--surface-3); }
+.cell-alloc.is-selected { background: var(--accent-soft); border-color: var(--accent); }
+.cell-alloc.is-selected .muted { color: var(--accent); }
+.cell-alloc:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+/* ---------- Status bar ---------- */
+.page.has-status-bar { padding-bottom: 96px; }
+.status-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  border-top: 1px solid var(--line);
+}
+.status-inner {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 7px 24px;
+  min-height: 44px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 22px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.status-total { display: inline-flex; align-items: baseline; gap: 7px; color: var(--muted); }
+.status-total strong { color: var(--ink); font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.status-stat { display: inline-flex; align-items: baseline; gap: 6px; }
+.status-stat b { color: var(--ink); font-weight: 600; }
+.status-spacer { flex: 1; }
+.status-hint { color: var(--faint); font-size: 12.5px; }
 
 /* ---------- Drawer ---------- */
 .drawer-bar {
@@ -826,6 +879,9 @@ body {
 }
 @media (max-width: 760px) {
   .page { padding: 20px 16px 48px; }
+  .page.has-status-bar { padding-bottom: 110px; }
+  .status-inner { padding: 7px 16px; gap: 4px 16px; }
+  .status-hint { display: none; }
   .page-head { flex-direction: column; align-items: flex-start; }
   .matrix { grid-template-columns: 1fr; }
   .corner,
