@@ -1,12 +1,14 @@
-import { Button, Drawer, Popconfirm, Progress } from "antd";
+import { Button, Drawer, Popconfirm } from "antd";
 import { CheckCircleFilled, CloseOutlined, DeleteOutlined, EditOutlined, FieldTimeOutlined } from "@ant-design/icons";
 import type { Item, ItemInput, TimePatch } from "../types";
 import { FOCUS, IMPACT } from "../labels";
 import { formatMinutes } from "../time";
 import { formatDateTime, relativeDeadline } from "../dates";
+import { paceLabel, useExpectedProgress } from "../expected";
 import { DeadlineChip } from "./DeadlineChip";
 import { ItemForm, type FormDefaults } from "./ItemForm";
 import { MarkDoneButton } from "./MarkDoneButton";
+import { ProgressBar } from "./ProgressBar";
 import { ProgressRing } from "./ProgressRing";
 import { TimeEditor } from "./TimeEditor";
 
@@ -115,6 +117,7 @@ interface DetailProps {
 function ItemDetail({ item, weeklyMinutes, onClose, onEdit, onDelete, onToggleDone, onSaveTime }: DetailProps) {
   const pct = item.done ? 100 : item.progress;
   const remaining = item.allocatedMinutes - item.spentMinutes;
+  const { expected, pace } = useExpectedProgress(item);
   return (
     <div className="detail">
       <div className="drawer-bar">
@@ -164,8 +167,13 @@ function ItemDetail({ item, weeklyMinutes, onClose, onEdit, onDelete, onToggleDo
           <div>
             <dt>Progress</dt>
             <dd className="detail-progress">
-              <ProgressRing percent={pct} size={22} stroke={3} />
+              <ProgressRing percent={pct} expected={expected} size={22} stroke={3} />
               <span className="num">{pct}%</span>
+              {pace && (
+                <small className={`pace-text is-${pace.status}`}>
+                  {paceLabel(pace)} · {expected}% expected
+                </small>
+              )}
             </dd>
           </div>
           <div>
@@ -186,7 +194,7 @@ function ItemDetail({ item, weeklyMinutes, onClose, onEdit, onDelete, onToggleDo
         </dl>
 
         <div className="detail-bar">
-          <Progress percent={pct} showInfo={false} strokeColor={item.done ? "var(--ok)" : "var(--accent)"} />
+          <ProgressBar percent={pct} expected={expected} done={item.done} />
           <TimeEditor item={item} weeklyMinutes={weeklyMinutes} onSave={onSaveTime}>
             <Button size="small" icon={<FieldTimeOutlined />}>
               Adjust time &amp; progress

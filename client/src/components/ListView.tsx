@@ -1,14 +1,16 @@
 import { useRef, type KeyboardEvent, type MouseEvent } from "react";
-import { Progress, Table, Tooltip, type TableColumnsType, type TableProps } from "antd";
+import { Table, Tooltip, type TableColumnsType, type TableProps } from "antd";
 import { FileTextOutlined } from "@ant-design/icons";
 import type { Item, TimePatch } from "../types";
 import { IMPACT } from "../labels";
 import { formatMinutes } from "../time";
+import { expectedProgress, paceLabel, paceOf, useNow } from "../expected";
 import { type Sort, type SortKey, DEFAULT_SORT } from "../filters";
 import { isInteractiveClick } from "../lib/dom";
 import type { CellSelection } from "../lib/selection";
 import { DeadlineChip } from "./DeadlineChip";
 import { MarkDoneButton } from "./MarkDoneButton";
+import { ProgressBar } from "./ProgressBar";
 import { TimeEditor } from "./TimeEditor";
 
 interface Props {
@@ -28,6 +30,7 @@ const orderFor = (key: SortKey, sort: Sort) => (sort.key === key ? (sort.dir ===
 
 /** Sorted table; the rows themselves open the task, column headers drive the shared sort. */
 export function ListView({ items, weeklyMinutes, sort, onSortChange, selection, onOpen, onToggleDone, onSaveTime }: Props) {
+  const now = useNow();
   const cells = useRef(new Map<number, HTMLButtonElement>());
 
   const focusCell = (id: number | null) => {
@@ -154,12 +157,23 @@ export function ListView({ items, weeklyMinutes, sort, onSortChange, selection, 
       sortOrder: orderFor("progress", sort),
       render: (_, it) => {
         const pct = it.done ? 100 : it.progress;
+        const expected = expectedProgress(it, now);
+        const pace = expected === null ? null : paceOf(pct, expected);
+        const cell = (
+          <button type="button" className={`cell-progress${pace ? ` is-${pace.status}` : ""}`} aria-label={`Edit progress for "${it.title}"`}>
+            <ProgressBar percent={pct} expected={expected} done={it.done} size={[80, 6]} />
+            <span className="num">{pct}%</span>
+          </button>
+        );
         return (
           <TimeEditor item={it} weeklyMinutes={weeklyMinutes} onSave={onSaveTime}>
-            <button type="button" className="cell-progress" aria-label={`Edit progress for "${it.title}"`}>
-              <Progress percent={pct} size={[80, 6]} showInfo={false} strokeColor={it.done ? "var(--ok)" : "var(--accent)"} />
-              <span className="num">{pct}%</span>
-            </button>
+            {pace ? (
+              <Tooltip title={`${expected}% expected by now · ${paceLabel(pace)}`} mouseEnterDelay={0.3}>
+                {cell}
+              </Tooltip>
+            ) : (
+              cell
+            )}
           </TimeEditor>
         );
       },

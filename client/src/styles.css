@@ -906,3 +906,25 @@ body {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ---------- Expected progress ---------- */
+.ring-expected { stroke: var(--warn); opacity: 0.45; transition: stroke-dashoffset 0.3s ease; }
+.time-chip.is-behind .time-chip-pct { color: var(--warn); }
+.pace-text.is-behind { color: var(--warn); }
+.pace-text.is-ahead { color: var(--ok); }
+.progress-bar { position: relative; display: inline-flex; align-items: center; flex: 1; min-width: 0; }
+.progress-bar .ant-progress { flex: 1; margin: 0; line-height: 0; }
+.expected-marker {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ink);
+  opacity: 0.55;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.progress-bar.is-behind .expected-marker { background: var(--warn); opacity: 0.9; }
+.cell-progress .progress-bar { flex: none; }

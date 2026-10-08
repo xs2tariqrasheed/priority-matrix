@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Popover } from "antd";
 import type { Item, TimePatch } from "../types";
+import { useExpectedProgress } from "../expected";
 import { TimeFields, type TimeValues } from "./TimeFields";
 
 interface Props {
@@ -19,6 +20,7 @@ const current = (item: Item): TimeValues => ({
 /** Popover with the time fields; saves when a slider is released, a number is committed, or the popover closes. */
 export function TimeEditor({ item, weeklyMinutes, onSave, children }: Props) {
   const [draft, setDraft] = useState<TimeValues>(() => current(item));
+  const { expected } = useExpectedProgress(item);
 
   useEffect(() => {
     setDraft(current(item));
@@ -45,7 +47,7 @@ export function TimeEditor({ item, weeklyMinutes, onSave, children }: Props) {
       }
       content={
         <div className="time-editor">
-          <TimeFields {...draft} max={weeklyMinutes} onChange={setDraft} onCommit={commit} />
+          <TimeFields {...draft} expected={expected} max={weeklyMinutes} onChange={setDraft} onCommit={commit} />
         </div>
       }
     >

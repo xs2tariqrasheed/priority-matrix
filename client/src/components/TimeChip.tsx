@@ -2,6 +2,7 @@ import type { ComponentPropsWithRef } from "react";
 import { PlusOutlined } from "@ant-design/icons";
 import type { Item } from "../types";
 import { formatMinutes } from "../time";
+import { paceLabel, useExpectedProgress } from "../expected";
 import { ProgressRing } from "./ProgressRing";
 
 type Props = { item: Item } & Omit<ComponentPropsWithRef<"button">, "children">;
@@ -13,7 +14,8 @@ type Props = { item: Item } & Omit<ComponentPropsWithRef<"button">, "children">;
 export function TimeChip({ item, className, ...rest }: Props) {
   const { allocatedMinutes: allocated, spentMinutes: spent } = item;
   const progress = item.done ? 100 : item.progress;
-  if (!allocated && !spent && !progress) {
+  const { expected, pace } = useExpectedProgress(item);
+  if (!allocated && !spent && !progress && !expected) {
     return (
       <button
         type="button"
@@ -29,10 +31,10 @@ export function TimeChip({ item, className, ...rest }: Props) {
     <button
       type="button"
       {...rest}
-      className={`time-chip${className ? ` ${className}` : ""}`}
-      aria-label={`${progress}% complete, ${formatMinutes(spent)} spent${allocated ? ` of ${formatMinutes(allocated)} allocated` : ""}. Edit time and progress`}
+      className={`time-chip${pace ? ` is-${pace.status}` : ""}${className ? ` ${className}` : ""}`}
+      aria-label={`${progress}% complete${pace ? `, ${expected}% expected by now (${paceLabel(pace).toLowerCase()})` : ""}, ${formatMinutes(spent)} spent${allocated ? ` of ${formatMinutes(allocated)} allocated` : ""}. Edit time and progress`}
     >
-      <ProgressRing percent={progress} />
+      <ProgressRing percent={progress} expected={expected} />
       <span className="time-chip-pct">{progress}%</span>
       <span className="time-chip-sep" />
       <span className="time-chip-time">

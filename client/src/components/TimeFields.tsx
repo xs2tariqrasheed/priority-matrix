@@ -1,5 +1,6 @@
 import { InputNumber, Slider } from "antd";
 import { STEP, formatMinutes, hoursToMinutes, minutesToHours } from "../time";
+import { paceLabel, paceOf } from "../expected";
 
 /** One-tap minute presets offered beside the allocated and spent sliders. */
 const MINUTE_PRESETS = [30, 60, 90, 120, 240];
@@ -15,13 +16,15 @@ export interface TimeValues {
 interface Props extends TimeValues {
   /** Upper end of the time sliders, normally the weekly available time. */
   max: number;
+  /** Progress the task should have reached by now, if it has a deadline. */
+  expected?: number | null;
   onChange: (next: TimeValues) => void;
   /** Fires when a slider is released or a number input is committed; use it to persist. */
   onCommit?: (next: TimeValues) => void;
 }
 
 /** Allocated time, time spent and progress: each a slider with a precise number input beside it. */
-export function TimeFields({ allocated, spent, progress, max, onChange, onCommit }: Props) {
+export function TimeFields({ allocated, spent, progress, expected, max, onChange, onCommit }: Props) {
   const values: TimeValues = { allocated, spent, progress };
   const sliderMax = Math.max(max, allocated, spent, 4 * 60);
   const set = (patch: Partial<TimeValues>, commit = false) => {
@@ -30,6 +33,7 @@ export function TimeFields({ allocated, spent, progress, max, onChange, onCommit
     if (commit) onCommit?.(next);
   };
   const remaining = allocated - spent;
+  const pace = expected == null ? null : paceOf(progress, expected);
 
   return (
     <div className="time-fields">
@@ -52,7 +56,16 @@ export function TimeFields({ allocated, spent, progress, max, onChange, onCommit
       <div className="time-row">
         <div className="time-row-head">
           <span className="time-row-label">
-            Progress <small>How complete it is</small>
+            Progress{" "}
+            <small>
+              {pace ? (
+                <>
+                  Expected {expected}% by now · <span className={`pace-text is-${pace.status}`}>{paceLabel(pace)}</span>
+                </>
+              ) : (
+                "How complete it is"
+              )}
+            </small>
           </span>
         </div>
         <div className="time-row-controls">

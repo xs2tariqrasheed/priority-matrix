@@ -4,13 +4,37 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "client", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "client",
+        "run",
+        "dev"
+      ],
       "port": 4001
     },
     {
       "name": "api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "server", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "server",
+        "run",
+        "dev"
+      ],
+      "port": 4000
+    },
+    {
+      "name": "api-local",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATABASE_URL=postgresql://tariqrasheed@127.0.0.1:5432/priority_matrix_dev",
+        "DATABASE_SSL=disable",
+        "npm",
+        "--prefix",
+        "server",
+        "run",
+        "dev"
+      ],
       "port": 4000
     }
   ]
