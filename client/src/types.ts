@@ -48,8 +48,15 @@ export interface TimePatch {
   progress: number;
 }
 
+/** Saved header range: presets by name (so "This week" follows the calendar), anything else as fixed dates. */
+export type RangeSetting =
+  | { preset: "this" | "next" | "last" | "next3" }
+  | { preset: "custom"; start: string; end: string };
+
 export interface Settings {
   weeklyMinutes: number;
+  /** Null until the user picks a range. */
+  range: RangeSetting | null;
 }
 
 export interface User {

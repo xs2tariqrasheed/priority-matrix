@@ -1,6 +1,7 @@
 import dayjs, { type Dayjs } from "dayjs";
 import isoWeek from "dayjs/plugin/isoWeek";
 import "dayjs/locale/en-gb";
+import type { RangeSetting } from "./types";
 
 dayjs.extend(isoWeek);
 dayjs.locale("en-gb"); // weeks start on Monday
@@ -37,6 +38,28 @@ export function presetOf(r: DateRange): RangePreset {
   if (isSameRange(r, weekRange(-1))) return "last";
   if (isSameRange(r, nextDays(3))) return "next3";
   return "custom";
+}
+
+/** What to save for a range: the preset name when it matches one, otherwise its dates. */
+export function toRangeSetting(r: DateRange): RangeSetting {
+  const preset = presetOf(r);
+  return preset === "custom" ? { preset, start: r.start, end: r.end } : { preset };
+}
+
+/** Resolves a saved range against today, so presets move with the calendar. */
+export function fromRangeSetting(s: RangeSetting): DateRange {
+  switch (s.preset) {
+    case "this":
+      return weekRange(0);
+    case "next":
+      return weekRange(1);
+    case "last":
+      return weekRange(-1);
+    case "next3":
+      return nextDays(3);
+    case "custom":
+      return { start: s.start, end: s.end };
+  }
 }
 
 export const rangeDays = (r: DateRange) => dayjs(r.end).diff(dayjs(r.start), "day") + 1;

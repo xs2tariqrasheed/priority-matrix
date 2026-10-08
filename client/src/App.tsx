@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { App as AntApp, Button, Skeleton } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { api } from "./api";
@@ -6,6 +6,7 @@ import { useAuth } from "./auth";
 import type { Focus, Impact, Item, ItemInput, TimePatch } from "./types";
 import { DEFAULT_AREAS } from "./labels";
 import { defaultFilters, type Filters } from "./filters";
+import { fromRangeSetting, toRangeSetting, type DateRange } from "./dates";
 import { formatMinutes } from "./time";
 import { AppShell, type Page } from "./components/AppShell";
 import { BrandMark } from "./components/Brand";
@@ -81,6 +82,23 @@ function Workspace() {
 
   const updateFilters = useCallback((patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch })), []);
 
+  // Set once the user picks a range, so a slow settings load can't overwrite their choice.
+  const rangeTouched = useRef(false);
+  const saveRangeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(saveRangeTimer.current), []);
+
+  /** Applies the range at once and saves it per user; rapid stepping is debounced into one save. */
+  const changeRange = (range: DateRange) => {
+    rangeTouched.current = true;
+    updateFilters({ range });
+    clearTimeout(saveRangeTimer.current);
+    saveRangeTimer.current = setTimeout(() => {
+      api.updateSettings({ range: toRangeSetting(range) }).catch((e) => {
+        message.warning(`Couldn't remember the date range: ${(e as Error).message}`);
+      });
+    }, 400);
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -88,12 +106,13 @@ function Workspace() {
       const [list, settings] = await Promise.all([api.list(), api.settings()]);
       setItems(list);
       setWeeklyMinutes(settings.weeklyMinutes);
+      if (settings.range && !rangeTouched.current) updateFilters({ range: fromRangeSetting(settings.range) });
     } catch (e) {
       setLoadError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [updateFilters]);
 
   useEffect(() => {
     load();
@@ -241,7 +260,7 @@ function Workspace() {
       page={page}
       onNavigate={navigate}
       range={filters.range}
-      onRangeChange={(range) => updateFilters({ range })}
+      onRangeChange={changeRange}
       user={user!}
       onLogout={handleLogout}
     >

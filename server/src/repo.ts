@@ -1,5 +1,5 @@
 import { pool, query } from "./db.js";
-import type { Item, ItemInput, ItemPatch, Settings, SettingsPatch } from "./types.js";
+import { RangeSetting, type Item, type ItemInput, type ItemPatch, type Settings, type SettingsPatch } from "./types.js";
 
 interface ItemRow {
   id: number;
@@ -150,23 +150,41 @@ export const itemsRepo = {
 /** Mon–Wed at ~7 h plus Thu–Sat at ~12 h, matching the focus slots shown in the UI. */
 const DEFAULT_WEEKLY_MINUTES = (3 * 7 + 3 * 12) * 60;
 
+/** A stored range that no longer parses (e.g. after a schema change) falls back to the default. */
+function parseRange(value: string | undefined): RangeSetting | null {
+  if (value === undefined) return null;
+  try {
+    const parsed = RangeSetting.safeParse(JSON.parse(value));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+const putSetting = (userId: number, key: string, value: string) =>
+  query(
+    `INSERT INTO settings (user_id, key, value) VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
+    [userId, key, value]
+  );
+
 export const settingsRepo = {
   async get(userId: number): Promise<Settings> {
-    const { rows } = await query<{ value: string }>(
-      "SELECT value FROM settings WHERE user_id = $1 AND key = 'weekly_minutes'",
+    const { rows } = await query<{ key: string; value: string }>(
+      "SELECT key, value FROM settings WHERE user_id = $1 AND key IN ('weekly_minutes', 'date_range')",
       [userId]
     );
-    return { weeklyMinutes: rows[0] ? Number(rows[0].value) : DEFAULT_WEEKLY_MINUTES };
+    const values = new Map(rows.map((r) => [r.key, r.value]));
+    const weekly = values.get("weekly_minutes");
+    return {
+      weeklyMinutes: weekly !== undefined ? Number(weekly) : DEFAULT_WEEKLY_MINUTES,
+      range: parseRange(values.get("date_range")),
+    };
   },
 
   async update(userId: number, patch: SettingsPatch): Promise<Settings> {
-    if (patch.weeklyMinutes !== undefined) {
-      await query(
-        `INSERT INTO settings (user_id, key, value) VALUES ($1, 'weekly_minutes', $2)
-         ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value`,
-        [userId, String(patch.weeklyMinutes)]
-      );
-    }
+    if (patch.weeklyMinutes !== undefined) await putSetting(userId, "weekly_minutes", String(patch.weeklyMinutes));
+    if (patch.range !== undefined) await putSetting(userId, "date_range", JSON.stringify(patch.range));
     return this.get(userId);
   },
 };

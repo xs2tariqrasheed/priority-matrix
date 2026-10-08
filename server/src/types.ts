@@ -74,9 +74,23 @@ export interface Item {
   updatedAt: string;
 }
 
+/**
+ * The date range last picked in the header. Presets are stored by name so "This week" keeps
+ * meaning the current week; anything else is stored as fixed dates.
+ */
+export const RangeSetting = z.discriminatedUnion("preset", [
+  z.object({ preset: z.enum(["this", "next", "last", "next3"]) }),
+  z
+    .object({ preset: z.literal("custom"), start: DateOnly, end: DateOnly })
+    .refine((r) => r.start <= r.end, "Range start must be on or before its end"),
+]);
+
+export type RangeSetting = z.infer<typeof RangeSetting>;
+
 export const SettingsPatch = z
   .object({
     weeklyMinutes: Minutes,
+    range: RangeSetting,
   })
   .partial();
 
@@ -84,6 +98,8 @@ export type SettingsPatch = z.infer<typeof SettingsPatch>;
 
 export interface Settings {
   weeklyMinutes: number;
+  /** Null until the user picks a range; the app then shows this week. */
+  range: RangeSetting | null;
 }
 
 export const Email = z.string().trim().toLowerCase().max(200).pipe(z.email("Enter a valid email address"));
