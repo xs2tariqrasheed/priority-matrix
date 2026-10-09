@@ -12,7 +12,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import { config } from "./env.js";
 import { migrate } from "./db.js";
-import { auth, errorHandler, items, settings } from "./routes.js";
+import { auth, errorHandler, invitations, items, settings } from "./routes.js";
 
 /**
  * Runs the schema migration at most once per process. On a long-running server
@@ -54,6 +54,7 @@ export function createApp() {
   app.use("/api/auth", auth);
   app.use("/api/items", items);
   app.use("/api/settings", settings);
+  app.use("/api/invitations", invitations);
   app.all("/api/{*rest}", (_req, res) => {
     res.status(404).json({ error: "Not found" });
   });

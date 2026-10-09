@@ -74,9 +74,68 @@ export interface Item {
   deadline: string | null;
   /** Set on a task inside an epic. An item with tasks under it is an epic. */
   parentId: number | null;
+  /** Whose matrix the item belongs to. A task inside an epic belongs to the epic's owner. */
+  owner: UserRef;
+  /** Who picked up the task; only tasks inside an epic can be assigned. */
+  assignee: UserRef | null;
+  /** Accepted members of the item's epic (of the item itself when it is top-level), owner excluded. */
+  memberCount: number;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/* ---------- Sharing ---------- */
+
+/** Invite by email address or numeric user id. */
+export const InviteInput = z.object({
+  user: z.string().trim().min(1, "Enter an email address or a user id").max(200),
+});
+
+/** Assign a task to one of the epic's people, or `null` to unassign it. */
+export const AssignInput = z.object({
+  userId: z.number().int().positive().nullable(),
+});
+
+export interface UserRef {
+  id: number;
+  name: string;
+  email: string;
+}
+
+export type MemberStatus = "pending" | "accepted" | "rejected";
+
+export interface Member {
+  user: UserRef;
+  status: MemberStatus;
+  invitedBy: UserRef | null;
+  invitedAt: string;
+  respondedAt: string | null;
+}
+
+export interface Members {
+  owner: UserRef;
+  members: Member[];
+}
+
+export interface Invitation {
+  epic: { id: number; title: string };
+  owner: UserRef;
+  invitedBy: UserRef | null;
+  invitedAt: string;
+}
+
+export interface LogEntry {
+  id: number;
+  /** The item the entry is about: the epic itself or one of its tasks. */
+  itemId: number;
+  itemTitle: string;
+  action: string;
+  actor: UserRef | null;
+  /** The person acted on: invited, removed, assigned or unassigned. */
+  target: UserRef | null;
+  details: Record<string, unknown>;
+  createdAt: string;
 }
 
 /**

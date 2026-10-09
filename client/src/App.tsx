@@ -7,6 +7,7 @@ import type { ApiItem, Focus, Impact, Item, ItemInput, TimePatch } from "./types
 import { DEFAULT_AREAS } from "./labels";
 import { defaultFilters, type Filters } from "./filters";
 import { fromRangeSetting, toRangeSetting, type DateRange } from "./dates";
+import { displayName } from "./people";
 import { formatMinutes } from "./time";
 import { withRollups } from "./tree";
 import { AppShell, type Page } from "./components/AppShell";
@@ -120,6 +121,16 @@ function Workspace() {
     load();
   }, [load]);
 
+  /** Reloads the items without the loading skeleton, to pick up changes made in shared epics. */
+  const refresh = useCallback(() => {
+    api.list().then(setItems, () => {});
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [refresh]);
+
   const areas = useMemo(() => [...new Set([...DEFAULT_AREAS, ...items.map((i) => i.area)])], [items]);
 
   const replace = (updated: ApiItem) => setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
@@ -211,6 +222,18 @@ function Workspace() {
 
   const handleSaveTime = (item: Item, time: TimePatch) => patch(item, time);
 
+  const handleAssign = async (item: Item, userId: number | null) => {
+    try {
+      const updated = await api.assign(item.id, userId);
+      replace(updated);
+      if (userId === null) message.success(`"${item.title}" unassigned`);
+      else if (userId === user!.id) message.success(`You picked up "${item.title}"`);
+      else message.success(`"${item.title}" assigned to ${updated.assignee ? displayName(updated.assignee) : "them"}`);
+    } catch (e) {
+      message.error(`Couldn't assign "${item.title}": ${(e as Error).message}`);
+    }
+  };
+
   const handleDrop = (id: number, impact: Impact, focus: Focus) => {
     const item = items.find((i) => i.id === id);
     if (!item || (item.impact === impact && item.focus === focus)) return;
@@ -272,6 +295,7 @@ function Workspace() {
     content = (
       <TasksPage
         items={items}
+        meId={user!.id}
         filters={filters}
         onFiltersChange={updateFilters}
         areas={areas}
@@ -297,6 +321,7 @@ function Workspace() {
       onRangeChange={changeRange}
       user={user!}
       onLogout={handleLogout}
+      onInvitationAccepted={refresh}
     >
       {content}
       <ItemDrawer
@@ -306,6 +331,7 @@ function Workspace() {
         areas={areas}
         weeklyMinutes={weeklyMinutes}
         saving={saving}
+        meId={user!.id}
         onClose={closeDrawer}
         onModeChange={setMode}
         onOpen={openItem}
@@ -314,6 +340,8 @@ function Workspace() {
         onDelete={handleDelete}
         onToggleDone={handleToggleDone}
         onSaveTime={handleSaveTime}
+        onAssign={handleAssign}
+        onMembersChanged={refresh}
       />
     </AppShell>
   );

@@ -1,5 +1,6 @@
 import type { Item, QuadrantKey } from "./types";
 import { type DateRange, inRange, toLocalDate, today, weekRange } from "./dates";
+import { isMine } from "./people";
 
 export type SortKey = "deadline" | "title" | "area" | "progress" | "allocated" | "spent" | "created";
 export type SortDir = "asc" | "desc";
@@ -75,8 +76,12 @@ export function booksTimeIn(i: Item, r: DateRange): boolean {
   return done !== null && inRange(done, r);
 }
 
-/** The tasks the weekly budget counts; area, label and search filters don't narrow it. */
-export const budgetItems = (items: Item[], r: DateRange): Item[] => items.filter((i) => booksTimeIn(i, r));
+/**
+ * The tasks the weekly budget counts; area, label and search filters don't narrow it. Only your
+ * own work counts: tasks in a shared epic count for whoever picked them up (the owner while unassigned).
+ */
+export const budgetItems = (items: Item[], r: DateRange, meId: number): Item[] =>
+  items.filter((i) => isMine(i, meId) && booksTimeIn(i, r));
 
 export function matchesFilters(i: Item, f: Filters): boolean {
   const q = f.query.trim().toLowerCase();

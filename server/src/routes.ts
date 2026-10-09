@@ -1,8 +1,10 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { ZodError } from "zod";
 import { SESSION_COOKIE, cookieOptions, loginThrottle, requireAuth, sessionsRepo, usersRepo, verifyPassword } from "./auth.js";
+import { logsRepo } from "./logs.js";
 import { ItemRuleError, itemsRepo, settingsRepo } from "./repo.js";
-import { ItemInput, ItemPatch, LoginInput, SettingsPatch } from "./types.js";
+import { invitationsRepo, membersRepo } from "./sharing.js";
+import { AssignInput, InviteInput, ItemInput, ItemPatch, LoginInput, SettingsPatch } from "./types.js";
 
 /* ---------- Auth ---------- */
 
@@ -49,10 +51,10 @@ auth.get("/me", requireAuth, (req, res) => {
 export const items = Router();
 items.use(requireAuth);
 
-const parseId = (req: Request, res: Response): number | null => {
-  const id = Number(req.params.id);
+const parseId = (req: Request, res: Response, param = "id", what = "Item id"): number | null => {
+  const id = Number(req.params[param]);
   if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: "Item id must be a positive integer" });
+    res.status(400).json({ error: `${what} must be a positive integer` });
     return null;
   }
   return id;
@@ -90,6 +92,62 @@ items.delete("/:id", async (req, res) => {
   if (!(await itemsRepo.remove(req.user!.id, id))) return void res.status(404).json({ error: `Item ${id} not found` });
   res.status(204).end();
 });
+
+/* ---------- Sharing: members, assignment, activity log ---------- */
+
+items.get("/:id/members", async (req, res) => {
+  const id = parseId(req, res);
+  if (id === null) return;
+  res.json(await membersRepo.list(req.user!.id, id));
+});
+
+items.post("/:id/members", async (req, res) => {
+  const id = parseId(req, res);
+  if (id === null) return;
+  const { user } = InviteInput.parse(req.body);
+  res.status(201).json(await membersRepo.invite(req.user!.id, id, user));
+});
+
+items.delete("/:id/members/:userId", async (req, res) => {
+  const id = parseId(req, res);
+  const userId = id === null ? null : parseId(req, res, "userId", "User id");
+  if (id === null || userId === null) return;
+  res.json(await membersRepo.remove(req.user!.id, id, userId));
+});
+
+items.put("/:id/assignee", async (req, res) => {
+  const id = parseId(req, res);
+  if (id === null) return;
+  const { userId } = AssignInput.parse(req.body);
+  const item = await itemsRepo.assign(req.user!.id, id, userId);
+  if (!item) return void res.status(404).json({ error: `Item ${id} not found` });
+  res.json(item);
+});
+
+items.get("/:id/logs", async (req, res) => {
+  const id = parseId(req, res);
+  if (id === null) return;
+  if (!(await itemsRepo.get(req.user!.id, id))) return void res.status(404).json({ error: `Item ${id} not found` });
+  res.json(await logsRepo.list(id));
+});
+
+/* ---------- Invitations (to the signed-in user) ---------- */
+
+export const invitations = Router();
+invitations.use(requireAuth);
+
+invitations.get("/", async (req, res) => {
+  res.json(await invitationsRepo.list(req.user!.id));
+});
+
+for (const answer of ["accept", "reject"] as const) {
+  invitations.post(`/:id/${answer}`, async (req, res) => {
+    const id = parseId(req, res, "id", "Epic id");
+    if (id === null) return;
+    await invitationsRepo.respond(req.user!.id, id, answer === "accept");
+    res.status(204).end();
+  });
+}
 
 /* ---------- Settings ---------- */
 

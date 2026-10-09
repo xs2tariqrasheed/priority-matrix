@@ -3,8 +3,10 @@ import { Dropdown } from "antd";
 import { AppstoreOutlined, BarChartOutlined, LogoutOutlined } from "@ant-design/icons";
 import type { User } from "../types";
 import type { DateRange } from "../dates";
+import { initialsOf } from "../people";
 import { BrandMark } from "./Brand";
 import { DateRangeBar } from "./DateRangeBar";
+import { InvitationsBell } from "./InvitationsBell";
 import { ThemeSwitcher } from "./ThemeSwitcher";
 
 export type Page = "tasks" | "reports";
@@ -16,20 +18,13 @@ interface Props {
   onRangeChange: (range: DateRange) => void;
   user: User;
   onLogout: () => void;
+  /** An invitation was accepted; reload so the shared epic shows. */
+  onInvitationAccepted: () => void;
   children: ReactNode;
 }
 
-const initialsOf = (user: User) => {
-  const source = user.name.trim() || user.email;
-  const parts = source.split(/[\s@._-]+/).filter(Boolean);
-  return parts
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join("");
-};
-
 /** Sticky header with navigation, the shared date range, theme and account controls. */
-export function AppShell({ page, onNavigate, range, onRangeChange, user, onLogout, children }: Props) {
+export function AppShell({ page, onNavigate, range, onRangeChange, user, onLogout, onInvitationAccepted, children }: Props) {
   return (
     <div className="shell">
       <header className="shell-head">
@@ -67,6 +62,7 @@ export function AppShell({ page, onNavigate, range, onRangeChange, user, onLogou
           </nav>
           <div className="shell-right">
             <DateRangeBar range={range} onChange={onRangeChange} />
+            <InvitationsBell onAccepted={onInvitationAccepted} />
             <ThemeSwitcher />
             <Dropdown
               trigger={["click"]}

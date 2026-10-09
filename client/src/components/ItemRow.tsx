@@ -6,6 +6,7 @@ import { DeadlineChip } from "./DeadlineChip";
 import { MarkDoneButton } from "./MarkDoneButton";
 import { TimeChip } from "./TimeChip";
 import { TimeEditor } from "./TimeEditor";
+import { ShareMark } from "./UserAvatar";
 
 interface Props {
   item: Item;
@@ -13,6 +14,7 @@ interface Props {
   nested?: boolean;
   /** Epic of a task shown away from it (another quadrant or area). */
   epicTitle?: string;
+  meId: number;
   weeklyMinutes: number;
   onOpen: (item: Item) => void;
   onToggleDone: (item: Item) => void;
@@ -20,7 +22,7 @@ interface Props {
 }
 
 /** Draggable matrix row; click anywhere on it to open the task. */
-export function ItemRow({ item, nested = false, epicTitle, weeklyMinutes, onOpen, onToggleDone, onSaveTime }: Props) {
+export function ItemRow({ item, nested = false, epicTitle, meId, weeklyMinutes, onOpen, onToggleDone, onSaveTime }: Props) {
   return (
     <li
       className={`item-row${item.done ? " is-done" : ""}${nested ? " is-nested" : ""}`}
@@ -50,6 +52,7 @@ export function ItemRow({ item, nested = false, epicTitle, weeklyMinutes, onOpen
         {item.notes && <FileTextOutlined className="item-note-icon" aria-label="Has notes" />}
       </span>
       <span className="item-meta">
+        <ShareMark item={item} meId={meId} />
         <DeadlineChip item={item} />
         <TimeEditor item={item} weeklyMinutes={weeklyMinutes} onSave={onSaveTime}>
           <TimeChip item={item} />

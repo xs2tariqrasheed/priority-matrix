@@ -1,6 +1,6 @@
 # Priority matrix
 
-Plan your work on a 2×2 matrix (**P/V** = Pain killer / Vitamin, **S/L** = Short / Long focus), give each task a deadline, allocated time, time spent and progress, then review the week in **Reports**. Multi-user with sign-in; every user only sees their own tasks.
+Plan your work on a 2×2 matrix (**P/V** = Pain killer / Vitamin, **S/L** = Short / Long focus), give each task a deadline, allocated time, time spent and progress, then review the week in **Reports**. Multi-user with sign-in; every user sees their own tasks plus the epics other people have shared with them.
 
 - **Client:** React 19 + Vite + Ant Design 6 (TypeScript), three dark themes
 - **Server:** Node 20 + Express 5 + PostgreSQL via `pg` (TypeScript), cookie sessions
@@ -33,7 +33,7 @@ DATABASE_URL=postgresql://you@localhost:5432/priority_matrix
 DATABASE_SSL=disable
 ```
 
-Tables (`users`, `sessions`, `items`, `settings`) are created automatically the first time the server starts. Row-level security is switched on so Supabase's public REST API cannot read them; the app connects as the table owner and is unaffected.
+Tables (`users`, `sessions`, `items`, `settings`, `epic_members`, `item_logs`) are created automatically the first time the server starts. Row-level security is switched on so Supabase's public REST API cannot read them; the app connects as the table owner and is unaffected.
 
 ### 2. Users
 
@@ -65,6 +65,9 @@ Open http://localhost:5174 and sign in. Vite proxies `/api` to the Express serve
 
 - **Two views** of the same tasks: the 2×2 matrix (drag a task to another quadrant to relabel it) and a sortable list. Click any task to open its detail panel; edit, mark done, or delete from there.
 - **Epics and tasks.** Break a task down by adding tasks under it (the **Add task** button in its detail panel, or the **+** on its list row); it then becomes an **epic**. Tasks have every field a task has and go one level deep only. The list view shows them as a tree under their epic (collapsible), and the matrix nests them under the epic when they share a quadrant and area. An epic's progress is the average of its tasks' progress (done counts as 100 %) and can't be edited directly; its allocated and spent time stay its own. Move a task between epics, or out of one, with the *Epic* field in the edit form. Deleting an epic deletes its tasks.
+- **Sharing epics.** In an epic's (or any top-level task's) detail panel, the *People* section invites someone by email address or user id. They get the invitation in the app (the bell in the header, checked every 30 s and when the window regains focus), not by email, and can accept or reject it; someone who rejected can be invited again. Members have every privilege the owner has for now: they see the epic and all its tasks in their own matrix, edit them, add and delete tasks, invite or remove people, and can leave. Removing a member (or leaving) unassigns their tasks.
+- **Pick, assign, unassign.** A task inside a shared epic has an *Assignee* row: *Pick up* takes it yourself, *Assign* hands it to the owner or another member, *Unassign* clears it. Assignees show as initials on the task's row; shared epics show a people count. The weekly budget counts only your own work: tasks assigned to you, plus unassigned tasks in your own matrix.
+- **Activity log.** The *Activity* button in every task's detail panel lists who did what and when: created, edited (which fields), marked done or reopened, moved, picked up, assigned, unassigned, and, on an epic, invitations sent, accepted, rejected or withdrawn, members removed or leaving, and tasks deleted or moved out. An epic's log includes its tasks' entries.
 - **Deadline, time & progress per task.** *Allocated* is the time budgeted, *Time spent* is what you actually worked (it may exceed the allocation), and *Progress* (0–100 %) is tracked separately. The quick editor on a task's time chip changes all three without opening the form.
 - **Date range** in the header, shared by Tasks and Reports. Defaults to **This week** (Monday–Sunday); quick chips for This week / **Next 3 days** (today plus the next two days) / Next week, arrows to step, and a calendar picker with presets for anything else. Tasks are in range when their deadline falls inside it (or, for completed tasks, when they were completed inside it).
 - **Show** menu: keep *overdue* open tasks visible whatever the range, include tasks with *no deadline*, and reveal *completed* tasks so they can be reopened.
@@ -79,7 +82,7 @@ Open http://localhost:5174 and sign in. Vite proxies `/api` to the Express serve
 
 ## API
 
-All routes except `/api/health` and `/api/auth/login` need a session cookie and operate on the signed-in user's data only.
+All routes except `/api/health` and `/api/auth/login` need a session cookie and operate on the items the signed-in user can see: their own, and every item of an epic they are an accepted member of.
 
 | Method | Path               | Body                                                                                          |
 |--------|--------------------|-----------------------------------------------------------------------------------------------|
@@ -93,8 +96,16 @@ All routes except `/api/health` and `/api/auth/login` need a session cookie and 
 | DELETE | /api/items/:id     |                                                                                               |
 | GET    | /api/settings      | → `{ weeklyMinutes }`                                                                         |
 | PATCH  | /api/settings      | `{ weeklyMinutes }`                                                                           |
+| GET    | /api/items/:id/members | → `{ owner, members: [{ user, status, invitedBy, invitedAt, respondedAt }] }` (top-level items) |
+| POST   | /api/items/:id/members | `{ user }` — an email address or a numeric user id; invites them                          |
+| DELETE | /api/items/:id/members/:userId | removes a member, withdraws an invitation, or leaves (your own id)                |
+| PUT    | /api/items/:id/assignee | `{ userId }` — pick up (your id), assign (a member's id) or unassign (`null`)           |
+| GET    | /api/items/:id/logs | → activity entries, newest first; an epic's include its tasks'                              |
+| GET    | /api/invitations   | → your pending invitations                                                                    |
+| POST   | /api/invitations/:epicId/accept | accept an invitation                                                             |
+| POST   | /api/invitations/:epicId/reject | reject an invitation                                                             |
 
-`impact` is `"P"` or `"V"`, `focus` is `"S"` or `"L"`, minutes are in 15-minute steps, `progress` is 0–100 and `deadline` is `YYYY-MM-DD` or `null`. `parentId` puts the item inside an epic (another top-level item of yours) or `null`; nesting deeper than one level, moving an epic under another, or setting an epic's `progress` returns `400`, and the epic's stored `progress` is recalculated whenever one of its tasks changes. Setting `done: true` stamps `completedAt`; `done: false` clears it. Bodies are validated with zod; errors return `400` with an `issues` list.
+`impact` is `"P"` or `"V"`, `focus` is `"S"` or `"L"`, minutes are in 15-minute steps, `progress` is 0–100 and `deadline` is `YYYY-MM-DD` or `null`. `parentId` puts the item inside an epic (another top-level item of yours) or `null`; nesting deeper than one level, moving an epic under another, or setting an epic's `progress` returns `400`, and the epic's stored `progress` is recalculated whenever one of its tasks changes. Setting `done: true` stamps `completedAt`; `done: false` clears it. Items also carry `owner`, `assignee` and `memberCount` (accepted members of the item's epic). A task inside an epic belongs to the epic's owner whoever created it; moving a task to the top level makes it the mover's, and its assignee is cleared unless they are one of the new epic's people. Only tasks inside an epic can be assigned, only the epic's owner and accepted members can be assignees, and a top-level item with members can't be moved into an epic. Bodies are validated with zod; errors return `400` with an `issues` list.
 
 ## Production
 
@@ -112,7 +123,9 @@ server/src/
   index.ts           Express app, static client in production
   env.ts             .env loading, DATABASE_URL / TLS resolution
   db.ts              pg pool, schema migration, connection hints
-  repo.ts            items + settings repositories (per user)
+  repo.ts            items + settings repositories (owned or shared with the user)
+  sharing.ts         epic members and invitations
+  logs.ts            activity log writes and reads
   auth.ts            scrypt passwords, sessions, requireAuth, login throttle
   routes.ts          /api/auth, /api/items, /api/settings, error handler
   types.ts           zod schemas + shared types
@@ -124,6 +137,7 @@ client/src/
   auth.tsx           session state (me / login / logout)
   filters.ts         date-range scope, budget scope, filters and sorting
   tree.ts            epic roll-ups (progress from tasks) and the list's tree rows
+  people.ts          names, initials, "is this mine" for shared items
   lib/selection.ts   spreadsheet-style cell selection for the list view
   reports.ts         report aggregation
   dates.ts           week ranges, deadline urgency, formatting (Monday-first)
@@ -133,6 +147,10 @@ client/src/
     ReportsPage.tsx  KPIs, by-area table, overdue and completed lists
     ItemDrawer.tsx   task detail / edit / create side panel
     ItemForm.tsx     task form (deadline picker, time & progress)
+    Sharing.tsx      an epic's People section and a task's Assignee row
+    ActivityLog.tsx  the Activity button and log
+    InvitationsBell.tsx  header bell: accept or reject invitations
+    UserAvatar.tsx   initials badge and the row's assignee / shared marker
     ListView.tsx     sortable table with selectable Allocated cells
     StatusBar.tsx    sticky footer totalling the selected cells
     Quadrant.tsx, ItemRow.tsx   matrix cells and rows

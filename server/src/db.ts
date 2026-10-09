@@ -67,6 +67,35 @@ const SCHEMA = `
   ALTER TABLE items ADD COLUMN IF NOT EXISTS parent_id BIGINT REFERENCES items(id) ON DELETE CASCADE;
   CREATE INDEX IF NOT EXISTS items_parent_id_idx ON items(parent_id);
 
+  -- Who has picked up a task inside an epic: the epic's owner or one of its members.
+  ALTER TABLE items ADD COLUMN IF NOT EXISTS assignee_id BIGINT REFERENCES users(id) ON DELETE SET NULL;
+  CREATE INDEX IF NOT EXISTS items_assignee_id_idx ON items(assignee_id);
+
+  -- People an epic is shared with. An invitation stays 'pending' until the invitee accepts or
+  -- rejects it in the app; only 'accepted' members can see and change the epic and its tasks.
+  CREATE TABLE IF NOT EXISTS epic_members (
+    epic_id      BIGINT      NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    user_id      BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status       TEXT        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected')),
+    invited_by   BIGINT      REFERENCES users(id) ON DELETE SET NULL,
+    invited_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    responded_at TIMESTAMPTZ,
+    PRIMARY KEY (epic_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS epic_members_user_idx ON epic_members(user_id, status);
+
+  -- Activity on an item: who did what, and to whom (invites, assignments, edits).
+  CREATE TABLE IF NOT EXISTS item_logs (
+    id         BIGSERIAL   PRIMARY KEY,
+    item_id    BIGINT      NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    actor_id   BIGINT      REFERENCES users(id) ON DELETE SET NULL,
+    action     TEXT        NOT NULL,
+    target_id  BIGINT      REFERENCES users(id) ON DELETE SET NULL,
+    details    JSONB       NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX IF NOT EXISTS item_logs_item_idx ON item_logs(item_id, created_at);
+
   CREATE TABLE IF NOT EXISTS settings (
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     key     TEXT   NOT NULL,
@@ -80,21 +109,31 @@ const SCHEMA = `
   ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
   ALTER TABLE items    ENABLE ROW LEVEL SECURITY;
   ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE epic_members ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE item_logs    ENABLE ROW LEVEL SECURITY;
 `;
 
-/** Creates the schema if it doesn't exist. Safe to run on every start. */
-export async function migrate(): Promise<void> {
+export type Db = Pick<pg.PoolClient, "query">;
+
+/** Runs `fn` on one connection inside BEGIN / COMMIT, rolling back if it throws. */
+export async function inTransaction<T>(fn: (db: Db) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(SCHEMA);
+    const result = await fn(client);
     await client.query("COMMIT");
+    return result;
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     throw e;
   } finally {
     client.release();
   }
+}
+
+/** Creates the schema if it doesn't exist. Safe to run on every start. */
+export async function migrate(): Promise<void> {
+  await inTransaction((db) => db.query(SCHEMA));
 }
 
 /** Human-readable advice for the most common connection failures. */

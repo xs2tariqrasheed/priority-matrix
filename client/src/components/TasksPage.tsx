@@ -16,6 +16,8 @@ import { WeeklyBudget } from "./WeeklyBudget";
 
 interface Props {
   items: Item[];
+  /** The signed-in user, for the budget and the assignee markers. */
+  meId: number;
   filters: Filters;
   onFiltersChange: (patch: Partial<Filters>) => void;
   areas: string[];
@@ -34,6 +36,7 @@ interface Props {
 
 export function TasksPage({
   items,
+  meId,
   filters,
   onFiltersChange,
   areas,
@@ -52,10 +55,10 @@ export function TasksPage({
   const openCount = visible.filter((i) => !i.done).length;
   const overdueCount = visible.filter(isOverdue).length;
   const dueCount = visible.filter((i) => !i.done && i.deadline !== null && inRange(i.deadline, filters.range)).length;
-  const rowHandlers = { weeklyMinutes, onOpen, onToggleDone, onSaveTime };
+  const rowHandlers = { meId, weeklyMinutes, onOpen, onToggleDone, onSaveTime };
 
   // The budget counts what is booked in the selected range, whatever the area, label or search filters say.
-  const budgeted = useMemo(() => budgetItems(items, filters.range), [items, filters.range]);
+  const budgeted = useMemo(() => budgetItems(items, filters.range, meId), [items, filters.range, meId]);
 
   // The list nests tasks under their epics; collapsed epics hide their tasks (and drop them from the selection order).
   const tree = useMemo(() => buildTree(visible, items, filters.sort), [visible, items, filters.sort]);

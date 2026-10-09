@@ -22,6 +22,12 @@ export interface ApiItem {
   deadline: string | null;
   /** The epic this task sits in, or null for a top-level item (one level deep). */
   parentId: number | null;
+  /** Whose matrix the item belongs to; a task inside an epic belongs to the epic's owner. */
+  owner: UserRef;
+  /** Who picked up the task (tasks inside an epic only). */
+  assignee: UserRef | null;
+  /** People the item's epic is shared with (accepted members, owner excluded). */
+  memberCount: number;
   /** ISO timestamp set when the task was marked done. */
   completedAt: string | null;
   createdAt: string;
@@ -75,5 +81,47 @@ export interface User {
   id: number;
   email: string;
   name: string;
+  createdAt: string;
+}
+
+export interface UserRef {
+  id: number;
+  name: string;
+  email: string;
+}
+
+export type MemberStatus = "pending" | "accepted" | "rejected";
+
+export interface Member {
+  user: UserRef;
+  status: MemberStatus;
+  invitedBy: UserRef | null;
+  invitedAt: string;
+  respondedAt: string | null;
+}
+
+/** An epic's people: the owner plus everyone invited (accepted, pending or rejected). */
+export interface Members {
+  owner: UserRef;
+  members: Member[];
+}
+
+/** An invitation to the signed-in user, waiting for an answer. */
+export interface Invitation {
+  epic: { id: number; title: string };
+  owner: UserRef;
+  invitedBy: UserRef | null;
+  invitedAt: string;
+}
+
+export interface LogEntry {
+  id: number;
+  /** The epic itself or one of its tasks. */
+  itemId: number;
+  itemTitle: string;
+  action: string;
+  actor: UserRef | null;
+  target: UserRef | null;
+  details: Record<string, unknown>;
   createdAt: string;
 }

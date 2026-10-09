@@ -1,4 +1,4 @@
-import type { ApiItem, ItemInput, ItemPatch, Settings, User } from "./types";
+import type { ApiItem, Invitation, ItemInput, ItemPatch, LogEntry, Members, Settings, User } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -53,6 +53,23 @@ export const api = {
   update: (id: number, patch: ItemPatch) =>
     request<ApiItem>(`${ITEMS}/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (id: number) => request<void>(`${ITEMS}/${id}`, { method: "DELETE" }),
+  /** Pick up (your own id), assign (someone else's) or unassign (null) a task inside an epic. */
+  assign: (id: number, userId: number | null) =>
+    request<ApiItem>(`${ITEMS}/${id}/assignee`, { method: "PUT", body: JSON.stringify({ userId }) }),
+  logs: (id: number) => request<LogEntry[]>(`${ITEMS}/${id}/logs`),
+  members: {
+    list: (epicId: number) => request<Members>(`${ITEMS}/${epicId}/members`),
+    /** `user` is an email address or a numeric user id. */
+    invite: (epicId: number, user: string) =>
+      request<Members>(`${ITEMS}/${epicId}/members`, { method: "POST", body: JSON.stringify({ user }) }),
+    /** Removes a member, withdraws an invitation, or leaves the epic when it is your own id. */
+    remove: (epicId: number, userId: number) => request<Members>(`${ITEMS}/${epicId}/members/${userId}`, { method: "DELETE" }),
+  },
+  invitations: {
+    list: () => request<Invitation[]>("/api/invitations"),
+    respond: (epicId: number, accept: boolean) =>
+      request<void>(`/api/invitations/${epicId}/${accept ? "accept" : "reject"}`, { method: "POST" }),
+  },
   settings: () => request<Settings>("/api/settings"),
   updateSettings: (patch: Partial<Settings>) =>
     request<Settings>("/api/settings", { method: "PATCH", body: JSON.stringify(patch) }),

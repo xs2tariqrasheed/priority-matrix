@@ -13,6 +13,7 @@ interface Props {
   items: Item[];
   /** Every item, to name the epic of a task whose epic sits elsewhere. */
   allItems: Item[];
+  meId: number;
   weeklyMinutes: number;
   onAdd: (impact: Impact, focus: Focus) => void;
   onDropItem: (id: number, impact: Impact, focus: Focus) => void;

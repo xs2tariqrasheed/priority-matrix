@@ -13,6 +13,7 @@ import { DeadlineChip } from "./DeadlineChip";
 import { MarkDoneButton } from "./MarkDoneButton";
 import { ProgressBar } from "./ProgressBar";
 import { TimeEditor } from "./TimeEditor";
+import { ShareMark } from "./UserAvatar";
 
 interface Props {
   /** Epics carry their visible tasks as `children`. */
@@ -21,6 +22,7 @@ interface Props {
   collapsed: ReadonlySet<number>;
   onToggleEpic: (id: number) => void;
   onAddTask: (epic: Item) => void;
+  meId: number;
   weeklyMinutes: number;
   sort: Sort;
   onSortChange: (sort: Sort) => void;
@@ -38,7 +40,7 @@ const orderFor = (key: SortKey, sort: Sort) => (sort.key === key ? (sort.dir ===
  * Sorted tree table: epics with their tasks nested beneath. The rows themselves open the item,
  * column headers drive the shared sort.
  */
-export function ListView({ rows, collapsed, onToggleEpic, onAddTask, weeklyMinutes, sort, onSortChange, selection, onOpen, onToggleDone, onSaveTime }: Props) {
+export function ListView({ rows, collapsed, onToggleEpic, onAddTask, meId, weeklyMinutes, sort, onSortChange, selection, onOpen, onToggleDone, onSaveTime }: Props) {
   const now = useNow();
   const cells = useRef(new Map<number, HTMLButtonElement>());
 
@@ -102,6 +104,7 @@ export function ListView({ rows, collapsed, onToggleEpic, onAddTask, weeklyMinut
               <FileTextOutlined className="item-note-icon" />
             </Tooltip>
           )}
+          <ShareMark item={it} meId={meId} />
         </div>
       ),
     },

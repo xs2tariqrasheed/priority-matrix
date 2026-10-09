@@ -1,17 +1,21 @@
 import { Button, Drawer, Popconfirm } from "antd";
-import { CheckCircleFilled, CloseOutlined, DeleteOutlined, EditOutlined, FieldTimeOutlined, PlusOutlined } from "@ant-design/icons";
+import { CheckCircleFilled, CloseOutlined, DeleteOutlined, EditOutlined, FieldTimeOutlined, PlusOutlined, TeamOutlined } from "@ant-design/icons";
 import type { Item, ItemInput, TimePatch } from "../types";
 import { FOCUS, IMPACT } from "../labels";
 import { formatMinutes } from "../time";
 import { formatDateTime, relativeDeadline } from "../dates";
 import { paceLabel, useExpectedProgress } from "../expected";
 import { DEFAULT_SORT, sortItems } from "../filters";
+import { displayName, isShared } from "../people";
+import { ActivityButton } from "./ActivityLog";
 import { DeadlineChip } from "./DeadlineChip";
 import { ItemForm, type FormDefaults } from "./ItemForm";
 import { MarkDoneButton } from "./MarkDoneButton";
 import { ProgressBar } from "./ProgressBar";
 import { ProgressRing } from "./ProgressRing";
+import { EpicPeople, TaskAssignee } from "./Sharing";
 import { TimeEditor } from "./TimeEditor";
+import { UserAvatar } from "./UserAvatar";
 
 export type DrawerMode = "view" | "edit" | "create";
 
@@ -25,6 +29,8 @@ interface Props {
   areas: string[];
   weeklyMinutes: number;
   saving: boolean;
+  /** The signed-in user. */
+  meId: number;
   onClose: () => void;
   onModeChange: (mode: DrawerMode) => void;
   /** Open another item in the panel (an epic's task, or a task's epic). */
@@ -35,6 +41,10 @@ interface Props {
   onDelete: (item: Item) => void;
   onToggleDone: (item: Item) => void;
   onSaveTime: (item: Item, patch: TimePatch) => void;
+  /** Pick up, assign or unassign (null) a task inside an epic. */
+  onAssign: (item: Item, userId: number | null) => Promise<void>;
+  /** An epic's people changed (or you left it). */
+  onMembersChanged: () => void;
 }
 
 /** One side panel for reading, editing and creating tasks. */
@@ -45,6 +55,7 @@ export function ItemDrawer({
   areas,
   weeklyMinutes,
   saving,
+  meId,
   onClose,
   onModeChange,
   onOpen,
@@ -53,6 +64,8 @@ export function ItemDrawer({
   onDelete,
   onToggleDone,
   onSaveTime,
+  onAssign,
+  onMembersChanged,
 }: Props) {
   const mode = state.open ? state.mode : "view";
   const defaults = state.open ? state.defaults : undefined;
@@ -106,6 +119,7 @@ export function ItemDrawer({
           item={item}
           items={items}
           weeklyMinutes={weeklyMinutes}
+          meId={meId}
           onOpen={onOpen}
           onAddTask={onAddTask}
           onClose={onClose}
@@ -113,6 +127,8 @@ export function ItemDrawer({
           onDelete={onDelete}
           onToggleDone={onToggleDone}
           onSaveTime={onSaveTime}
+          onAssign={onAssign}
+          onMembersChanged={onMembersChanged}
         />
       )}
     </Drawer>
@@ -132,6 +148,7 @@ interface DetailProps {
   item: Item;
   items: Item[];
   weeklyMinutes: number;
+  meId: number;
   onOpen: (item: Item) => void;
   onAddTask: (epic: Item) => void;
   onClose: () => void;
@@ -139,9 +156,25 @@ interface DetailProps {
   onDelete: (item: Item) => void;
   onToggleDone: (item: Item) => void;
   onSaveTime: (item: Item, patch: TimePatch) => void;
+  onAssign: (item: Item, userId: number | null) => Promise<void>;
+  onMembersChanged: () => void;
 }
 
-function ItemDetail({ item, items, weeklyMinutes, onOpen, onAddTask, onClose, onEdit, onDelete, onToggleDone, onSaveTime }: DetailProps) {
+function ItemDetail({
+  item,
+  items,
+  weeklyMinutes,
+  meId,
+  onOpen,
+  onAddTask,
+  onClose,
+  onEdit,
+  onDelete,
+  onToggleDone,
+  onSaveTime,
+  onAssign,
+  onMembersChanged,
+}: DetailProps) {
   const pct = item.done ? 100 : item.progress;
   const remaining = item.allocatedMinutes - item.spentMinutes;
   const { expected, pace } = useExpectedProgress(item);
@@ -159,6 +192,7 @@ function ItemDetail({ item, items, weeklyMinutes, onOpen, onAddTask, onClose, on
           {item.childCount > 0 && <span className="epic-tag">Epic</span>}
         </span>
         <span className="drawer-bar-actions">
+          <ActivityButton item={item} meId={meId} />
           <Button type="text" icon={<EditOutlined />} onClick={onEdit}>
             Edit
           </Button>
@@ -178,6 +212,14 @@ function ItemDetail({ item, items, weeklyMinutes, onOpen, onAddTask, onClose, on
           {item.area}
           {item.category && <span className="detail-crumb">{item.category}</span>}
         </p>
+        {isShared(item) && (
+          <p className="detail-shared">
+            <TeamOutlined />
+            {item.owner.id === meId
+              ? `Shared with ${item.memberCount} ${item.memberCount === 1 ? "person" : "people"}`
+              : `Shared by ${displayName(item.owner)}`}
+          </p>
+        )}
 
         {item.done && (
           <div className="detail-banner">
@@ -239,6 +281,8 @@ function ItemDetail({ item, items, weeklyMinutes, onOpen, onAddTask, onClose, on
           </TimeEditor>
         </div>
 
+        {item.parentId !== null && (isShared(item) || item.assignee) && <TaskAssignee task={item} meId={meId} onAssign={onAssign} />}
+
         {item.parentId === null && (
           <section className="detail-tasks">
             <header className="detail-tasks-head">
@@ -259,6 +303,7 @@ function ItemDetail({ item, items, weeklyMinutes, onOpen, onAddTask, onClose, on
                       {t.done ? <CheckCircleFilled className="detail-task-check" /> : <ProgressRing percent={t.progress} size={16} stroke={2.5} />}
                       <span className="detail-task-title">{t.title}</span>
                       {t.deadline && !t.done && <DeadlineChip item={t} />}
+                      {t.assignee && <UserAvatar user={t.assignee} title={`Assigned to ${t.assignee.id === meId ? "you" : displayName(t.assignee)}`} />}
                       <span className="num muted">{t.done ? 100 : t.progress}%</span>
                     </button>
                   </li>
@@ -267,6 +312,8 @@ function ItemDetail({ item, items, weeklyMinutes, onOpen, onAddTask, onClose, on
             )}
           </section>
         )}
+
+        {item.parentId === null && <EpicPeople epic={item} meId={meId} onChanged={onMembersChanged} />}
 
         <section className="detail-notes">
           <h3>Notes</h3>
