@@ -1,4 +1,4 @@
-import type { Item, ItemInput, ItemPatch, Settings, User } from "./types";
+import type { ApiItem, ItemInput, ItemPatch, Settings, User } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -47,10 +47,11 @@ export const api = {
       ).then((r) => r.user),
     logout: () => request<void>("/api/auth/logout", { method: "POST" }),
   },
-  list: () => request<Item[]>(ITEMS),
-  create: (input: ItemInput) => request<Item>(ITEMS, { method: "POST", body: JSON.stringify(input) }),
+  list: () => request<ApiItem[]>(ITEMS),
+  get: (id: number) => request<ApiItem>(`${ITEMS}/${id}`),
+  create: (input: ItemInput) => request<ApiItem>(ITEMS, { method: "POST", body: JSON.stringify(input) }),
   update: (id: number, patch: ItemPatch) =>
-    request<Item>(`${ITEMS}/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+    request<ApiItem>(`${ITEMS}/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (id: number) => request<void>(`${ITEMS}/${id}`, { method: "DELETE" }),
   settings: () => request<Settings>("/api/settings"),
   updateSettings: (patch: Partial<Settings>) =>

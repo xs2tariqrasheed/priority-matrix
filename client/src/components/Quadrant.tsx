@@ -11,6 +11,8 @@ interface Props {
   focus: Focus;
   advice: string;
   items: Item[];
+  /** Every item, to name the epic of a task whose epic sits elsewhere. */
+  allItems: Item[];
   weeklyMinutes: number;
   onAdd: (impact: Impact, focus: Focus) => void;
   onDropItem: (id: number, impact: Impact, focus: Focus) => void;
@@ -19,7 +21,7 @@ interface Props {
   onSaveTime: (item: Item, patch: TimePatch) => void;
 }
 
-export function Quadrant({ code, impact, focus, advice, items, onAdd, onDropItem, ...rowHandlers }: Props) {
+export function Quadrant({ code, impact, focus, advice, items, allItems, onAdd, onDropItem, ...rowHandlers }: Props) {
   const [over, setOver] = useState(false);
   const open = items.filter((i) => !i.done).length;
 
@@ -71,8 +73,14 @@ export function Quadrant({ code, impact, focus, advice, items, onAdd, onDropItem
             <div key={area} className="group">
               <h3>{area}</h3>
               <ul>
-                {list.map((it) => (
-                  <ItemRow key={it.id} item={it} {...rowHandlers} />
+                {nestTasks(list).map(({ item: it, nested }) => (
+                  <ItemRow
+                    key={it.id}
+                    item={it}
+                    nested={nested}
+                    epicTitle={!nested && it.parentId !== null ? allItems.find((e) => e.id === it.parentId)?.title : undefined}
+                    {...rowHandlers}
+                  />
                 ))}
               </ul>
             </div>
@@ -81,4 +89,13 @@ export function Quadrant({ code, impact, focus, advice, items, onAdd, onDropItem
       )}
     </section>
   );
+}
+
+/** Puts each task right under its epic when both are in the same list; other tasks keep their place. */
+function nestTasks(list: Item[]): { item: Item; nested: boolean }[] {
+  const here = new Set(list.map((i) => i.id));
+  const nestedUnder = (i: Item) => i.parentId !== null && here.has(i.parentId);
+  return list
+    .filter((i) => !nestedUnder(i))
+    .flatMap((i) => [{ item: i, nested: false }, ...list.filter((t) => t.parentId === i.id).map((t) => ({ item: t, nested: true }))]);
 }

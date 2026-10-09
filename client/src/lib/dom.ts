@@ -8,5 +8,7 @@ export function isInteractiveClick(e: MouseEvent<HTMLElement>): boolean {
   const target = e.target as HTMLElement | null;
   if (!target) return false;
   if (!e.currentTarget.contains(target)) return true;
-  return Boolean(target.closest("button, a, input, textarea, select, [role='button'], [role='slider'], .ant-popover"));
+  // The row itself may carry role="button"; only controls inside it count.
+  const control = target.closest("button, a, input, textarea, select, [role='button'], [role='slider'], .ant-popover");
+  return control !== null && control !== e.currentTarget;
 }

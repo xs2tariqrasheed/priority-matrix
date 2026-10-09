@@ -63,6 +63,10 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS items_user_id_idx ON items(user_id);
   CREATE INDEX IF NOT EXISTS items_user_deadline_idx ON items(user_id, deadline);
 
+  -- Tasks inside an epic point at it; deleting the epic deletes its tasks.
+  ALTER TABLE items ADD COLUMN IF NOT EXISTS parent_id BIGINT REFERENCES items(id) ON DELETE CASCADE;
+  CREATE INDEX IF NOT EXISTS items_parent_id_idx ON items(parent_id);
+
   CREATE TABLE IF NOT EXISTS settings (
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     key     TEXT   NOT NULL,

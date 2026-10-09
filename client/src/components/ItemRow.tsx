@@ -1,4 +1,5 @@
 import { FileTextOutlined } from "@ant-design/icons";
+import { isEpic } from "../tree";
 import type { Item, TimePatch } from "../types";
 import { isInteractiveClick } from "../lib/dom";
 import { DeadlineChip } from "./DeadlineChip";
@@ -8,6 +9,10 @@ import { TimeEditor } from "./TimeEditor";
 
 interface Props {
   item: Item;
+  /** Shown indented under its epic, which is the row above. */
+  nested?: boolean;
+  /** Epic of a task shown away from it (another quadrant or area). */
+  epicTitle?: string;
   weeklyMinutes: number;
   onOpen: (item: Item) => void;
   onToggleDone: (item: Item) => void;
@@ -15,10 +20,10 @@ interface Props {
 }
 
 /** Draggable matrix row; click anywhere on it to open the task. */
-export function ItemRow({ item, weeklyMinutes, onOpen, onToggleDone, onSaveTime }: Props) {
+export function ItemRow({ item, nested = false, epicTitle, weeklyMinutes, onOpen, onToggleDone, onSaveTime }: Props) {
   return (
     <li
-      className={`item-row${item.done ? " is-done" : ""}`}
+      className={`item-row${item.done ? " is-done" : ""}${nested ? " is-nested" : ""}`}
       draggable
       tabIndex={0}
       role="button"
@@ -38,7 +43,9 @@ export function ItemRow({ item, weeklyMinutes, onOpen, onToggleDone, onSaveTime 
       }}
     >
       <span className="item-main">
+        {isEpic(item) && <span className="epic-tag">Epic · {item.childCount}</span>}
         <span className="item-title">{item.title}</span>
+        {epicTitle && <span className="item-epic">in {epicTitle}</span>}
         {item.category && <span className="item-category">{item.category}</span>}
         {item.notes && <FileTextOutlined className="item-note-icon" aria-label="Has notes" />}
       </span>

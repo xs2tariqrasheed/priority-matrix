@@ -3,11 +3,12 @@ import { App as AntApp, Button, Skeleton } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { api } from "./api";
 import { useAuth } from "./auth";
-import type { Focus, Impact, Item, ItemInput, TimePatch } from "./types";
+import type { ApiItem, Focus, Impact, Item, ItemInput, TimePatch } from "./types";
 import { DEFAULT_AREAS } from "./labels";
 import { defaultFilters, type Filters } from "./filters";
 import { fromRangeSetting, toRangeSetting, type DateRange } from "./dates";
 import { formatMinutes } from "./time";
+import { withRollups } from "./tree";
 import { AppShell, type Page } from "./components/AppShell";
 import { BrandMark } from "./components/Brand";
 import type { FormDefaults } from "./components/ItemForm";
@@ -61,7 +62,8 @@ export default function App() {
 function Workspace() {
   const { user, logout } = useAuth();
   const { message } = AntApp.useApp();
-  const [items, setItems] = useState<Item[]>([]);
+  const [rawItems, setItems] = useState<ApiItem[]>([]);
+  const items = useMemo(() => withRollups(rawItems), [rawItems]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -120,14 +122,23 @@ function Workspace() {
 
   const areas = useMemo(() => [...new Set([...DEFAULT_AREAS, ...items.map((i) => i.area)])], [items]);
 
-  const replace = (updated: Item) => setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+  const replace = (updated: ApiItem) => setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+
+  /**
+   * The server recalculates an epic when one of its tasks changes; fetch it so its stored
+   * fields match (the progress shown is already derived locally).
+   */
+  const refreshEpic = (id: number | null) => {
+    if (id !== null) api.get(id).then(replace, () => {});
+  };
 
   /** Apply a change locally first, then persist; roll back if the server rejects it. */
-  const patch = async (item: Item, changes: Partial<Item>, successMsg?: string) => {
-    const previous = items;
+  const patch = async (item: Item, changes: Partial<ApiItem>, successMsg?: string) => {
+    const previous = rawItems;
     replace({ ...item, ...changes });
     try {
       replace(await api.update(item.id, changes));
+      refreshEpic(item.parentId);
       if (successMsg) message.success(successMsg);
     } catch (e) {
       setItems(previous);
@@ -137,6 +148,16 @@ function Workspace() {
 
   const openItem = (item: Item) => setDrawer({ open: true, mode: "view", itemId: item.id });
   const openCreate = (defaults?: FormDefaults) => setDrawer({ open: true, mode: "create", itemId: null, defaults });
+  /** New task inside `epic` (a plain task becomes an epic once it has one), prefilled from it. */
+  const openAddTask = (epic: Item) =>
+    openCreate({
+      parentId: epic.id,
+      area: epic.area,
+      category: epic.category,
+      impact: epic.impact,
+      focus: epic.focus,
+      deadline: epic.deadline,
+    });
   const closeDrawer = () => setDrawer({ open: false });
   const setMode = (mode: DrawerMode) => setDrawer((d) => (d.open ? { ...d, mode } : d));
 
@@ -145,13 +166,23 @@ function Workspace() {
     try {
       if (item) {
         replace(await api.update(item.id, values));
+        refreshEpic(item.parentId);
+        if (values.parentId !== undefined && values.parentId !== item.parentId) refreshEpic(values.parentId);
         message.success("Changes saved");
         setMode("view");
       } else {
         const created = await api.create(values);
         setItems((prev) => [...prev, created]);
-        message.success(`Added to ${created.impact}${created.focus}`);
-        closeDrawer();
+        const epic = created.parentId === null ? undefined : items.find((i) => i.id === created.parentId);
+        if (epic) {
+          refreshEpic(epic.id);
+          message.success(epic.childCount === 0 ? `"${epic.title}" is now an epic` : `Added to "${epic.title}"`);
+          // Back to the epic, where the new task now shows in its list.
+          setDrawer({ open: true, mode: "view", itemId: epic.id });
+        } else {
+          message.success(`Added to ${created.impact}${created.focus}`);
+          closeDrawer();
+        }
       }
     } catch (e) {
       message.error((e as Error).message);
@@ -161,12 +192,14 @@ function Workspace() {
   };
 
   const handleDelete = async (item: Item) => {
-    const previous = items;
-    setItems((prev) => prev.filter((i) => i.id !== item.id));
+    const previous = rawItems;
+    // Deleting an epic deletes its tasks too.
+    setItems((prev) => prev.filter((i) => i.id !== item.id && i.parentId !== item.id));
     closeDrawer();
     try {
       await api.remove(item.id);
-      message.success("Task deleted");
+      refreshEpic(item.parentId);
+      message.success(item.childCount > 0 ? `Epic and its ${item.childCount} ${item.childCount === 1 ? "task" : "tasks"} deleted` : "Task deleted");
     } catch (e) {
       setItems(previous);
       message.error(`Couldn't delete "${item.title}": ${(e as Error).message}`);
@@ -248,6 +281,7 @@ function Workspace() {
         onViewChange={changeView}
         onOpen={openItem}
         onAdd={openCreate}
+        onAddTask={openAddTask}
         onToggleDone={handleToggleDone}
         onSaveTime={handleSaveTime}
         onDrop={handleDrop}
@@ -274,6 +308,8 @@ function Workspace() {
         saving={saving}
         onClose={closeDrawer}
         onModeChange={setMode}
+        onOpen={openItem}
+        onAddTask={openAddTask}
         onSubmit={handleSubmit}
         onDelete={handleDelete}
         onToggleDone={handleToggleDone}

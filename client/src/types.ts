@@ -2,7 +2,8 @@ export type Impact = "P" | "V";
 export type Focus = "S" | "L";
 export type QuadrantKey = `${Impact}${Focus}`;
 
-export interface Item {
+/** An item as the API returns it. */
+export interface ApiItem {
   id: number;
   title: string;
   area: string;
@@ -19,10 +20,20 @@ export interface Item {
   progress: number;
   /** Due date as YYYY-MM-DD, or null. */
   deadline: string | null;
+  /** The epic this task sits in, or null for a top-level item (one level deep). */
+  parentId: number | null;
   /** ISO timestamp set when the task was marked done. */
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * An item as the app shows it. Anything with tasks under it is an epic: `childCount` > 0 and
+ * `progress` is the mean of its tasks' progress (see `withRollups`).
+ */
+export interface Item extends ApiItem {
+  childCount: number;
 }
 
 export interface ItemInput {
@@ -37,15 +48,16 @@ export interface ItemInput {
   spentMinutes?: number;
   progress?: number;
   deadline?: string | null;
+  parentId?: number | null;
 }
 
 export type ItemPatch = Partial<ItemInput>;
 
-/** The three numbers edited together in the quick time editor. */
+/** The numbers edited together in the quick time editor; an epic's progress is left out. */
 export interface TimePatch {
   allocatedMinutes: number;
   spentMinutes: number;
-  progress: number;
+  progress?: number;
 }
 
 /** Saved header range: presets by name (so "This week" follows the calendar), anything else as fixed dates. */

@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { ZodError } from "zod";
 import { SESSION_COOKIE, cookieOptions, loginThrottle, requireAuth, sessionsRepo, usersRepo, verifyPassword } from "./auth.js";
-import { itemsRepo, settingsRepo } from "./repo.js";
+import { ItemRuleError, itemsRepo, settingsRepo } from "./repo.js";
 import { ItemInput, ItemPatch, LoginInput, SettingsPatch } from "./types.js";
 
 /* ---------- Auth ---------- */
@@ -112,6 +112,10 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
       error: "Validation failed",
       issues: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
     });
+    return;
+  }
+  if (err instanceof ItemRuleError) {
+    res.status(err.status).json({ error: err.message });
     return;
   }
   if (err instanceof SyntaxError && "status" in err && err.status === 400) {

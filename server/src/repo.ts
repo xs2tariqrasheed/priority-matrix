@@ -1,3 +1,4 @@
+import type pg from "pg";
 import { pool, query } from "./db.js";
 import { RangeSetting, type Item, type ItemInput, type ItemPatch, type Settings, type SettingsPatch } from "./types.js";
 
@@ -15,6 +16,7 @@ interface ItemRow {
   spent_minutes: number;
   progress: number;
   deadline: string | null;
+  parent_id: number | null;
   completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
@@ -33,6 +35,7 @@ const toItem = (r: ItemRow): Item => ({
   spentMinutes: r.spent_minutes,
   progress: r.progress,
   deadline: r.deadline,
+  parentId: r.parent_id,
   completedAt: r.completed_at ? r.completed_at.toISOString() : null,
   createdAt: r.created_at.toISOString(),
   updatedAt: r.updated_at.toISOString(),
@@ -50,13 +53,14 @@ const COLUMNS: Record<keyof ItemPatch, string> = {
   spentMinutes: "spent_minutes",
   progress: "progress",
   deadline: "deadline",
+  parentId: "parent_id",
 };
 
 const INSERT = `
   INSERT INTO items
-    (user_id, title, area, category, impact, focus, notes, done, allocated_minutes, spent_minutes, progress, deadline, completed_at)
+    (user_id, title, area, category, impact, focus, notes, done, allocated_minutes, spent_minutes, progress, deadline, parent_id, completed_at)
   VALUES
-    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CASE WHEN $8 THEN now() ELSE NULL END)
+    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CASE WHEN $8 THEN now() ELSE NULL END)
   RETURNING *`;
 
 const insertParams = (userId: number, i: ItemInput) => [
@@ -72,7 +76,73 @@ const insertParams = (userId: number, i: ItemInput) => [
   i.spentMinutes,
   i.progress,
   i.deadline,
+  i.parentId,
 ];
+
+/** A request that breaks the epic/task rules; the route turns it into a 4xx response. */
+export class ItemRuleError extends Error {
+  constructor(
+    message: string,
+    readonly status: 400 | 404 = 400
+  ) {
+    super(message);
+    this.name = "ItemRuleError";
+  }
+}
+
+type Db = Pick<pg.PoolClient, "query">;
+
+async function inTransaction<T>(fn: (db: Db) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** Locks one of the user's items for the rest of the transaction. */
+async function lockItem(db: Db, userId: number, id: number): Promise<ItemRow | undefined> {
+  const { rows } = await db.query<ItemRow>("SELECT * FROM items WHERE user_id = $1 AND id = $2 FOR UPDATE", [userId, id]);
+  return rows[0];
+}
+
+async function hasTasks(db: Db, id: number): Promise<boolean> {
+  const { rows } = await db.query("SELECT 1 FROM items WHERE parent_id = $1 LIMIT 1", [id]);
+  return rows.length > 0;
+}
+
+/**
+ * Checks that `parentId` can take a task: it exists, belongs to the user and is not itself a
+ * task inside an epic (one level deep). The row is locked so a concurrent move can't nest it.
+ */
+async function lockParent(db: Db, userId: number, parentId: number): Promise<void> {
+  const parent = await lockItem(db, userId, parentId);
+  if (!parent) throw new ItemRuleError(`Epic ${parentId} not found`, 404);
+  if (parent.parent_id !== null) throw new ItemRuleError("A task inside an epic can't have tasks of its own");
+}
+
+/**
+ * An epic's progress is the mean of its tasks' progress, with done tasks counting as 100.
+ * Left untouched once its last task is gone, so the item keeps the value it had.
+ */
+async function refreshEpicProgress(db: Db, epicId: number | null): Promise<void> {
+  if (epicId === null) return;
+  await db.query(
+    `UPDATE items p
+        SET progress = t.progress, updated_at = now()
+       FROM (SELECT round(avg(CASE WHEN done THEN 100 ELSE progress END))::smallint AS progress
+               FROM items WHERE parent_id = $1) t
+      WHERE p.id = $1 AND t.progress IS NOT NULL AND p.progress <> t.progress`,
+    [epicId]
+  );
+}
 
 /** Items are always scoped to the owning user; other users' rows are invisible. */
 export const itemsRepo = {
@@ -90,36 +160,73 @@ export const itemsRepo = {
     return rows[0] ? toItem(rows[0]) : undefined;
   },
 
+  /** Adding a task under an item turns that item into an epic. */
   async create(userId: number, input: ItemInput): Promise<Item> {
-    const { rows } = await query<ItemRow>(INSERT, insertParams(userId, input));
-    return toItem(rows[0]);
+    if (input.parentId === null) {
+      const { rows } = await query<ItemRow>(INSERT, insertParams(userId, input));
+      return toItem(rows[0]);
+    }
+    return inTransaction(async (db) => {
+      await lockParent(db, userId, input.parentId!);
+      const { rows } = await db.query<ItemRow>(INSERT, insertParams(userId, input));
+      await refreshEpicProgress(db, input.parentId);
+      return toItem(rows[0]);
+    });
   },
 
   async update(userId: number, id: number, patch: ItemPatch): Promise<Item | undefined> {
-    const sets: string[] = [];
-    const params: unknown[] = [userId, id];
-    for (const key of Object.keys(patch) as (keyof ItemPatch)[]) {
-      const value = patch[key];
-      if (value === undefined) continue;
-      params.push(value);
-      sets.push(`${COLUMNS[key]} = $${params.length}`);
-      if (key === "done") {
-        // Marking done stamps the completion time (kept if already done); reopening clears it.
-        sets.push(`completed_at = CASE WHEN $${params.length} THEN COALESCE(completed_at, now()) ELSE NULL END`);
+    return inTransaction(async (db) => {
+      const current = await lockItem(db, userId, id);
+      if (!current) return undefined;
+
+      const isEpic = await hasTasks(db, id);
+      if (patch.progress !== undefined && patch.progress !== current.progress && isEpic) {
+        throw new ItemRuleError("An epic's progress is calculated from its tasks");
       }
-    }
-    if (sets.length === 0) return this.get(userId, id);
-    sets.push("updated_at = now()");
-    const { rows } = await query<ItemRow>(
-      `UPDATE items SET ${sets.join(", ")} WHERE user_id = $1 AND id = $2 RETURNING *`,
-      params
-    );
-    return rows[0] ? toItem(rows[0]) : undefined;
+      const moving = patch.parentId !== undefined && patch.parentId !== current.parent_id;
+      if (moving && patch.parentId !== null) {
+        if (patch.parentId === id) throw new ItemRuleError("An item can't be its own epic");
+        if (isEpic) throw new ItemRuleError("An epic can't go inside another epic");
+        await lockParent(db, userId, patch.parentId!);
+      }
+
+      const sets: string[] = [];
+      const params: unknown[] = [userId, id];
+      for (const key of Object.keys(patch) as (keyof ItemPatch)[]) {
+        const value = patch[key];
+        if (value === undefined) continue;
+        if (key === "progress" && isEpic) continue;
+        params.push(value);
+        sets.push(`${COLUMNS[key]} = $${params.length}`);
+        if (key === "done") {
+          // Marking done stamps the completion time (kept if already done); reopening clears it.
+          sets.push(`completed_at = CASE WHEN $${params.length} THEN COALESCE(completed_at, now()) ELSE NULL END`);
+        }
+      }
+      if (sets.length === 0) return toItem(current);
+      sets.push("updated_at = now()");
+      const { rows } = await db.query<ItemRow>(
+        `UPDATE items SET ${sets.join(", ")} WHERE user_id = $1 AND id = $2 RETURNING *`,
+        params
+      );
+      const updated = rows[0];
+      await refreshEpicProgress(db, updated.parent_id);
+      if (moving) await refreshEpicProgress(db, current.parent_id);
+      return toItem(updated);
+    });
   },
 
+  /** Deleting an epic deletes its tasks too. */
   async remove(userId: number, id: number): Promise<boolean> {
-    const { rowCount } = await query("DELETE FROM items WHERE user_id = $1 AND id = $2", [userId, id]);
-    return (rowCount ?? 0) > 0;
+    return inTransaction(async (db) => {
+      const { rows } = await db.query<{ parent_id: number | null }>(
+        "DELETE FROM items WHERE user_id = $1 AND id = $2 RETURNING parent_id",
+        [userId, id]
+      );
+      if (rows.length === 0) return false;
+      await refreshEpicProgress(db, rows[0].parent_id);
+      return true;
+    });
   },
 
   async count(userId: number): Promise<number> {

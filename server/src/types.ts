@@ -37,6 +37,8 @@ const ItemFields = z.object({
   progress: Progress,
   /** Due date, or null when the task has no deadline. */
   deadline: DateOnly.nullable(),
+  /** The epic this task belongs to, or null for a top-level item. Only one level deep. */
+  parentId: z.number().int().positive().nullable(),
 });
 
 /** Create: optional fields get defaults. */
@@ -48,6 +50,7 @@ export const ItemInput = ItemFields.extend({
   spentMinutes: Minutes.default(0),
   progress: Progress.default(0),
   deadline: ItemFields.shape.deadline.default(null),
+  parentId: ItemFields.shape.parentId.default(null),
 });
 
 /** Update: every field optional, nothing defaulted, so omitted fields stay untouched. */
@@ -69,6 +72,8 @@ export interface Item {
   spentMinutes: number;
   progress: number;
   deadline: string | null;
+  /** Set on a task inside an epic. An item with tasks under it is an epic. */
+  parentId: number | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;

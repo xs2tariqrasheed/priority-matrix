@@ -97,6 +97,7 @@ const rows: ItemInput[] = seed.map(([area, category, title, label]) => ({
   spentMinutes: 0,
   progress: 0,
   deadline: null,
+  parentId: null,
 }));
 
 await itemsRepo.insertMany(user.id, rows);

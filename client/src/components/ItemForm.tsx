@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AutoComplete, Button, DatePicker, Form, Input, Radio } from "antd";
+import { AutoComplete, Button, DatePicker, Form, Input, Radio, Select } from "antd";
 import type { Focus, Impact, Item, ItemInput } from "../types";
 import { FOCUS, IMPACT } from "../labels";
 import { ISO, dayjs, weekRange, type Dayjs } from "../dates";
@@ -9,7 +9,10 @@ export interface FormDefaults {
   impact?: Impact;
   focus?: Focus;
   area?: string;
+  category?: string;
   deadline?: string | null;
+  /** Create the task inside this item, which then becomes an epic. */
+  parentId?: number | null;
 }
 
 interface Props {
@@ -31,12 +34,15 @@ interface FormValues {
   impact: Impact;
   focus: Focus;
   deadline: Dayjs | null;
+  parentId: number | null;
   notes?: string;
 }
 
 export function ItemForm({ item, defaults, items, areas, weeklyMinutes, saving, onSubmit, onCancel }: Props) {
   const [form] = Form.useForm<FormValues>();
   const area = Form.useWatch("area", form);
+  // An epic's progress comes from its tasks; an epic can't itself go inside another epic.
+  const isEpic = (item?.childCount ?? 0) > 0;
   const [time, setTime] = useState<TimeValues>({
     allocated: item?.allocatedMinutes ?? 0,
     spent: item?.spentMinutes ?? 0,
@@ -51,15 +57,17 @@ export function ItemForm({ item, defaults, items, areas, weeklyMinutes, saving, 
         impact: item.impact,
         focus: item.focus,
         deadline: item.deadline ? dayjs(item.deadline) : null,
+        parentId: item.parentId,
         notes: item.notes,
       }
     : {
         title: "",
         area: defaults?.area ?? areas[0] ?? "",
-        category: "",
+        category: defaults?.category ?? "",
         impact: defaults?.impact ?? "P",
         focus: defaults?.focus ?? "S",
         deadline: defaults?.deadline ? dayjs(defaults.deadline) : null,
+        parentId: defaults?.parentId ?? null,
         notes: "",
       };
 
@@ -67,6 +75,16 @@ export function ItemForm({ item, defaults, items, areas, weeklyMinutes, saving, 
     const set = new Set(items.filter((i) => i.area === area && i.category).map((i) => i.category));
     return [...set].sort().map((value) => ({ value }));
   }, [items, area]);
+
+  // Only top-level items can hold tasks (one level deep).
+  const epicOptions = useMemo(
+    () =>
+      items
+        .filter((i) => i.parentId === null && i.id !== item?.id)
+        .sort((a, b) => b.childCount - a.childCount || a.title.localeCompare(b.title))
+        .map((i) => ({ value: i.id, label: i.childCount > 0 ? `${i.title} · epic` : i.title })),
+    [items, item?.id]
+  );
 
   return (
     <Form<FormValues>
@@ -84,9 +102,10 @@ export function ItemForm({ item, defaults, items, areas, weeklyMinutes, saving, 
           focus: v.focus,
           notes: v.notes ?? "",
           deadline: v.deadline ? v.deadline.format(ISO) : null,
+          parentId: v.parentId ?? null,
           allocatedMinutes: time.allocated,
           spentMinutes: time.spent,
-          progress: time.progress,
+          ...(isEpic ? {} : { progress: time.progress }),
         })
       }
     >
@@ -122,6 +141,25 @@ export function ItemForm({ item, defaults, items, areas, weeklyMinutes, saving, 
         </Form.Item>
       </div>
 
+      <Form.Item
+        name="parentId"
+        label="Epic"
+        extra={
+          isEpic
+            ? `This is an epic with ${item!.childCount} ${item!.childCount === 1 ? "task" : "tasks"}, so it can't go inside another epic.`
+            : "Put this task inside another one. A task with tasks under it becomes an epic."
+        }
+      >
+        <Select
+          allowClear
+          showSearch
+          disabled={isEpic}
+          placeholder="None — a top-level task"
+          options={epicOptions}
+          optionFilterProp="label"
+        />
+      </Form.Item>
+
       <Form.Item name="deadline" label="Deadline">
         <DatePicker
           allowClear
@@ -139,7 +177,7 @@ export function ItemForm({ item, defaults, items, areas, weeklyMinutes, saving, 
 
       <div className="form-section">
         <div className="form-section-title">Time &amp; progress</div>
-        <TimeFields {...time} max={weeklyMinutes} onChange={setTime} />
+        <TimeFields {...time} progressFrom={isEpic ? item!.childCount : undefined} max={weeklyMinutes} onChange={setTime} />
       </div>
 
       <Form.Item name="notes" label="Notes">

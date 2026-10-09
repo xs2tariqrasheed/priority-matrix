@@ -1,10 +1,11 @@
 import { Button, Drawer, Popconfirm } from "antd";
-import { CheckCircleFilled, CloseOutlined, DeleteOutlined, EditOutlined, FieldTimeOutlined } from "@ant-design/icons";
+import { CheckCircleFilled, CloseOutlined, DeleteOutlined, EditOutlined, FieldTimeOutlined, PlusOutlined } from "@ant-design/icons";
 import type { Item, ItemInput, TimePatch } from "../types";
 import { FOCUS, IMPACT } from "../labels";
 import { formatMinutes } from "../time";
 import { formatDateTime, relativeDeadline } from "../dates";
 import { paceLabel, useExpectedProgress } from "../expected";
+import { DEFAULT_SORT, sortItems } from "../filters";
 import { DeadlineChip } from "./DeadlineChip";
 import { ItemForm, type FormDefaults } from "./ItemForm";
 import { MarkDoneButton } from "./MarkDoneButton";
@@ -26,6 +27,10 @@ interface Props {
   saving: boolean;
   onClose: () => void;
   onModeChange: (mode: DrawerMode) => void;
+  /** Open another item in the panel (an epic's task, or a task's epic). */
+  onOpen: (item: Item) => void;
+  /** Start a new task inside this item, which then becomes an epic. */
+  onAddTask: (epic: Item) => void;
   onSubmit: (values: ItemInput, item: Item | null) => void;
   onDelete: (item: Item) => void;
   onToggleDone: (item: Item) => void;
@@ -33,9 +38,25 @@ interface Props {
 }
 
 /** One side panel for reading, editing and creating tasks. */
-export function ItemDrawer({ state, item, items, areas, weeklyMinutes, saving, onClose, onModeChange, onSubmit, onDelete, onToggleDone, onSaveTime }: Props) {
+export function ItemDrawer({
+  state,
+  item,
+  items,
+  areas,
+  weeklyMinutes,
+  saving,
+  onClose,
+  onModeChange,
+  onOpen,
+  onAddTask,
+  onSubmit,
+  onDelete,
+  onToggleDone,
+  onSaveTime,
+}: Props) {
   const mode = state.open ? state.mode : "view";
   const defaults = state.open ? state.defaults : undefined;
+  const newTaskEpic = defaults?.parentId ? items.find((i) => i.id === defaults.parentId) : undefined;
 
   return (
     <Drawer
@@ -49,7 +70,7 @@ export function ItemDrawer({ state, item, items, areas, weeklyMinutes, saving, o
     >
       {mode === "create" && (
         <>
-          <DrawerBar title="New task" onClose={onClose} />
+          <DrawerBar title={newTaskEpic ? `New task in "${newTaskEpic.title}"` : "New task"} onClose={onClose} />
           <div className="drawer-body">
             <ItemForm
               item={null}
@@ -66,7 +87,7 @@ export function ItemDrawer({ state, item, items, areas, weeklyMinutes, saving, o
       )}
       {mode === "edit" && item && (
         <>
-          <DrawerBar title="Edit task" onClose={onClose} />
+          <DrawerBar title={item.childCount > 0 ? "Edit epic" : "Edit task"} onClose={onClose} />
           <div className="drawer-body">
             <ItemForm
               item={item}
@@ -83,7 +104,10 @@ export function ItemDrawer({ state, item, items, areas, weeklyMinutes, saving, o
       {mode === "view" && item && (
         <ItemDetail
           item={item}
+          items={items}
           weeklyMinutes={weeklyMinutes}
+          onOpen={onOpen}
+          onAddTask={onAddTask}
           onClose={onClose}
           onEdit={() => onModeChange("edit")}
           onDelete={onDelete}
@@ -106,7 +130,10 @@ function DrawerBar({ title, onClose }: { title: string; onClose: () => void }) {
 
 interface DetailProps {
   item: Item;
+  items: Item[];
   weeklyMinutes: number;
+  onOpen: (item: Item) => void;
+  onAddTask: (epic: Item) => void;
   onClose: () => void;
   onEdit: () => void;
   onDelete: (item: Item) => void;
@@ -114,10 +141,12 @@ interface DetailProps {
   onSaveTime: (item: Item, patch: TimePatch) => void;
 }
 
-function ItemDetail({ item, weeklyMinutes, onClose, onEdit, onDelete, onToggleDone, onSaveTime }: DetailProps) {
+function ItemDetail({ item, items, weeklyMinutes, onOpen, onAddTask, onClose, onEdit, onDelete, onToggleDone, onSaveTime }: DetailProps) {
   const pct = item.done ? 100 : item.progress;
   const remaining = item.allocatedMinutes - item.spentMinutes;
   const { expected, pace } = useExpectedProgress(item);
+  const epic = item.parentId === null ? undefined : items.find((i) => i.id === item.parentId);
+  const tasks = item.childCount > 0 ? sortItems(items.filter((i) => i.parentId === item.id), DEFAULT_SORT) : [];
   return (
     <div className="detail">
       <div className="drawer-bar">
@@ -127,6 +156,7 @@ function ItemDetail({ item, weeklyMinutes, onClose, onEdit, onDelete, onToggleDo
             {item.focus}
           </span>
           {IMPACT[item.impact].name} · {FOCUS[item.focus].name}
+          {item.childCount > 0 && <span className="epic-tag">Epic</span>}
         </span>
         <span className="drawer-bar-actions">
           <Button type="text" icon={<EditOutlined />} onClick={onEdit}>
@@ -137,6 +167,12 @@ function ItemDetail({ item, weeklyMinutes, onClose, onEdit, onDelete, onToggleDo
       </div>
 
       <div className="drawer-body">
+        {epic && (
+          <button type="button" className="detail-epic" onClick={() => onOpen(epic)}>
+            <span className="epic-tag">Epic</span>
+            <span className="detail-epic-title">{epic.title}</span>
+          </button>
+        )}
         <h2 className={`detail-title${item.done ? " is-done" : ""}`}>{item.title}</h2>
         <p className="detail-area">
           {item.area}
@@ -174,6 +210,7 @@ function ItemDetail({ item, weeklyMinutes, onClose, onEdit, onDelete, onToggleDo
                   {paceLabel(pace)} · {expected}% expected
                 </small>
               )}
+              {tasks.length > 0 && <small>from {tasks.length} {tasks.length === 1 ? "task" : "tasks"}</small>}
             </dd>
           </div>
           <div>
@@ -202,6 +239,35 @@ function ItemDetail({ item, weeklyMinutes, onClose, onEdit, onDelete, onToggleDo
           </TimeEditor>
         </div>
 
+        {item.parentId === null && (
+          <section className="detail-tasks">
+            <header className="detail-tasks-head">
+              <h3>
+                Tasks{tasks.length > 0 && <span className="count">{tasks.filter((t) => t.done).length}/{tasks.length} done</span>}
+              </h3>
+              <Button size="small" type="text" icon={<PlusOutlined />} onClick={() => onAddTask(item)}>
+                Add task
+              </Button>
+            </header>
+            {tasks.length === 0 ? (
+              <p className="muted">Break this down into tasks. Adding one turns this task into an epic whose progress follows its tasks.</p>
+            ) : (
+              <ul className="detail-task-list">
+                {tasks.map((t) => (
+                  <li key={t.id}>
+                    <button type="button" className={`detail-task${t.done ? " is-done" : ""}`} onClick={() => onOpen(t)}>
+                      {t.done ? <CheckCircleFilled className="detail-task-check" /> : <ProgressRing percent={t.progress} size={16} stroke={2.5} />}
+                      <span className="detail-task-title">{t.title}</span>
+                      {t.deadline && !t.done && <DeadlineChip item={t} />}
+                      <span className="num muted">{t.done ? 100 : t.progress}%</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
         <section className="detail-notes">
           <h3>Notes</h3>
           {item.notes ? <p>{item.notes}</p> : <p className="muted">No notes yet.</p>}
@@ -215,8 +281,12 @@ function ItemDetail({ item, weeklyMinutes, onClose, onEdit, onDelete, onToggleDo
       <footer className="detail-actions">
         <MarkDoneButton item={item} onToggle={onToggleDone} variant="primary" size="middle" />
         <Popconfirm
-          title="Delete this task?"
-          description="This can't be undone."
+          title={item.childCount > 0 ? "Delete this epic?" : "Delete this task?"}
+          description={
+            item.childCount > 0
+              ? `Its ${item.childCount} ${item.childCount === 1 ? "task is" : "tasks are"} deleted too. This can't be undone.`
+              : "This can't be undone."
+          }
           okText="Delete"
           okButtonProps={{ danger: true }}
           onConfirm={() => onDelete(item)}

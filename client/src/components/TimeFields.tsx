@@ -18,13 +18,16 @@ interface Props extends TimeValues {
   max: number;
   /** Progress the task should have reached by now, if it has a deadline. */
   expected?: number | null;
+  /** Set on an epic: its progress comes from this many tasks and can't be edited here. */
+  progressFrom?: number;
   onChange: (next: TimeValues) => void;
   /** Fires when a slider is released or a number input is committed; use it to persist. */
   onCommit?: (next: TimeValues) => void;
 }
 
 /** Allocated time, time spent and progress: each a slider with a precise number input beside it. */
-export function TimeFields({ allocated, spent, progress, expected, max, onChange, onCommit }: Props) {
+export function TimeFields({ allocated, spent, progress, expected, progressFrom, max, onChange, onCommit }: Props) {
+  const locked = progressFrom !== undefined;
   const values: TimeValues = { allocated, spent, progress };
   const sliderMax = Math.max(max, allocated, spent, 4 * 60);
   const set = (patch: Partial<TimeValues>, commit = false) => {
@@ -62,6 +65,8 @@ export function TimeFields({ allocated, spent, progress, expected, max, onChange
                 <>
                   Expected {expected}% by now · <span className={`pace-text is-${pace.status}`}>{paceLabel(pace)}</span>
                 </>
+              ) : locked ? (
+                `Calculated from ${progressFrom} ${progressFrom === 1 ? "task" : "tasks"}`
               ) : (
                 "How complete it is"
               )}
@@ -74,6 +79,7 @@ export function TimeFields({ allocated, spent, progress, expected, max, onChange
             max={100}
             step={5}
             value={progress}
+            disabled={locked}
             tooltip={{ formatter: (v) => `${v ?? 0}%` }}
             onChange={(v) => set({ progress: v })}
             onChangeComplete={(v) => set({ progress: v }, true)}
@@ -85,6 +91,7 @@ export function TimeFields({ allocated, spent, progress, expected, max, onChange
             step={5}
             value={progress}
             suffix="%"
+            disabled={locked}
             className="time-number"
             onChange={(v) => set({ progress: Math.max(0, Math.min(100, Math.round(v ?? 0))) })}
             onBlur={() => onCommit?.(values)}
@@ -92,12 +99,16 @@ export function TimeFields({ allocated, spent, progress, expected, max, onChange
             aria-label="Progress percent"
           />
         </div>
-        <QuickPicks
-          label="Progress"
-          picks={PROGRESS_PRESETS.map((p) => ({ value: p, label: `${p}%` }))}
-          value={progress}
-          onPick={(v) => set({ progress: v }, true)}
-        />
+        {locked ? (
+          <p className="time-locked">An epic's progress is the average of its tasks. Update the tasks to move it.</p>
+        ) : (
+          <QuickPicks
+            label="Progress"
+            picks={PROGRESS_PRESETS.map((p) => ({ value: p, label: `${p}%` }))}
+            value={progress}
+            onPick={(v) => set({ progress: v }, true)}
+          />
+        )}
       </div>
       <p className="time-summary">
         {allocated === 0 && spent === 0 ? (

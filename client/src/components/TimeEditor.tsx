@@ -26,9 +26,13 @@ export function TimeEditor({ item, weeklyMinutes, onSave, children }: Props) {
     setDraft(current(item));
   }, [item.allocatedMinutes, item.spentMinutes, item.progress]);
 
+  const epic = item.childCount > 0;
+
   const commit = (v: TimeValues) => {
-    if (v.allocated === item.allocatedMinutes && v.spent === item.spentMinutes && v.progress === item.progress) return;
-    onSave(item, { allocatedMinutes: v.allocated, spentMinutes: v.spent, progress: v.progress });
+    if (v.allocated === item.allocatedMinutes && v.spent === item.spentMinutes && (epic || v.progress === item.progress)) return;
+    const time = { allocatedMinutes: v.allocated, spentMinutes: v.spent };
+    // An epic's progress is calculated from its tasks, so it is never sent.
+    onSave(item, epic ? time : { ...time, progress: v.progress });
   };
 
   return (
@@ -47,7 +51,14 @@ export function TimeEditor({ item, weeklyMinutes, onSave, children }: Props) {
       }
       content={
         <div className="time-editor">
-          <TimeFields {...draft} expected={expected} max={weeklyMinutes} onChange={setDraft} onCommit={commit} />
+          <TimeFields
+            {...draft}
+            expected={expected}
+            progressFrom={epic ? item.childCount : undefined}
+            max={weeklyMinutes}
+            onChange={setDraft}
+            onCommit={commit}
+          />
         </div>
       }
     >

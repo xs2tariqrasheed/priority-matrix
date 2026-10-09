@@ -64,6 +64,7 @@ Open http://localhost:5174 and sign in. Vite proxies `/api` to the Express serve
 ## Features
 
 - **Two views** of the same tasks: the 2×2 matrix (drag a task to another quadrant to relabel it) and a sortable list. Click any task to open its detail panel; edit, mark done, or delete from there.
+- **Epics and tasks.** Break a task down by adding tasks under it (the **Add task** button in its detail panel, or the **+** on its list row); it then becomes an **epic**. Tasks have every field a task has and go one level deep only. The list view shows them as a tree under their epic (collapsible), and the matrix nests them under the epic when they share a quadrant and area. An epic's progress is the average of its tasks' progress (done counts as 100 %) and can't be edited directly; its allocated and spent time stay its own. Move a task between epics, or out of one, with the *Epic* field in the edit form. Deleting an epic deletes its tasks.
 - **Deadline, time & progress per task.** *Allocated* is the time budgeted, *Time spent* is what you actually worked (it may exceed the allocation), and *Progress* (0–100 %) is tracked separately. The quick editor on a task's time chip changes all three without opening the form.
 - **Date range** in the header, shared by Tasks and Reports. Defaults to **This week** (Monday–Sunday); quick chips for This week / **Next 3 days** (today plus the next two days) / Next week, arrows to step, and a calendar picker with presets for anything else. Tasks are in range when their deadline falls inside it (or, for completed tasks, when they were completed inside it).
 - **Show** menu: keep *overdue* open tasks visible whatever the range, include tasks with *no deadline*, and reveal *completed* tasks so they can be reopened.
@@ -87,13 +88,13 @@ All routes except `/api/health` and `/api/auth/login` need a session cookie and 
 | GET    | /api/auth/me       | → `{ user }`                                                                                  |
 | GET    | /api/items         |                                                                                               |
 | GET    | /api/items/:id     |                                                                                               |
-| POST   | /api/items         | `{ title, area, impact, focus, category?, notes?, done?, allocatedMinutes?, spentMinutes?, progress?, deadline? }` |
+| POST   | /api/items         | `{ title, area, impact, focus, category?, notes?, done?, allocatedMinutes?, spentMinutes?, progress?, deadline?, parentId? }` |
 | PATCH  | /api/items/:id     | any subset of the above                                                                       |
 | DELETE | /api/items/:id     |                                                                                               |
 | GET    | /api/settings      | → `{ weeklyMinutes }`                                                                         |
 | PATCH  | /api/settings      | `{ weeklyMinutes }`                                                                           |
 
-`impact` is `"P"` or `"V"`, `focus` is `"S"` or `"L"`, minutes are in 15-minute steps, `progress` is 0–100 and `deadline` is `YYYY-MM-DD` or `null`. Setting `done: true` stamps `completedAt`; `done: false` clears it. Bodies are validated with zod; errors return `400` with an `issues` list.
+`impact` is `"P"` or `"V"`, `focus` is `"S"` or `"L"`, minutes are in 15-minute steps, `progress` is 0–100 and `deadline` is `YYYY-MM-DD` or `null`. `parentId` puts the item inside an epic (another top-level item of yours) or `null`; nesting deeper than one level, moving an epic under another, or setting an epic's `progress` returns `400`, and the epic's stored `progress` is recalculated whenever one of its tasks changes. Setting `done: true` stamps `completedAt`; `done: false` clears it. Bodies are validated with zod; errors return `400` with an `issues` list.
 
 ## Production
 
@@ -122,6 +123,7 @@ client/src/
   theme.tsx          the three palettes; drives CSS variables and Ant Design tokens
   auth.tsx           session state (me / login / logout)
   filters.ts         date-range scope, budget scope, filters and sorting
+  tree.ts            epic roll-ups (progress from tasks) and the list's tree rows
   lib/selection.ts   spreadsheet-style cell selection for the list view
   reports.ts         report aggregation
   dates.ts           week ranges, deadline urgency, formatting (Monday-first)

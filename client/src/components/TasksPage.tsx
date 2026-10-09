@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import type { Focus, Impact, Item, TimePatch } from "../types";
@@ -6,6 +6,7 @@ import { FOCUS, IMPACT, QUADRANTS } from "../labels";
 import { formatRange, inRange, rangeTitle } from "../dates";
 import { applyFilters, budgetItems, isOverdue, sortItems, type Filters, type Sort } from "../filters";
 import { useCellSelection } from "../lib/selection";
+import { buildTree, flattenTree } from "../tree";
 import type { FormDefaults } from "./ItemForm";
 import { FilterBar, type View } from "./FilterBar";
 import { ListView } from "./ListView";
@@ -24,6 +25,8 @@ interface Props {
   onViewChange: (view: View) => void;
   onOpen: (item: Item) => void;
   onAdd: (defaults?: FormDefaults) => void;
+  /** Add a task inside this item, making it an epic. */
+  onAddTask: (epic: Item) => void;
   onToggleDone: (item: Item) => void;
   onSaveTime: (item: Item, patch: TimePatch) => void;
   onDrop: (id: number, impact: Impact, focus: Focus) => void;
@@ -40,6 +43,7 @@ export function TasksPage({
   onViewChange,
   onOpen,
   onAdd,
+  onAddTask,
   onToggleDone,
   onSaveTime,
   onDrop,
@@ -53,7 +57,18 @@ export function TasksPage({
   // The budget counts what is booked in the selected range, whatever the area, label or search filters say.
   const budgeted = useMemo(() => budgetItems(items, filters.range), [items, filters.range]);
 
-  const rowIds = useMemo(() => visible.map((i) => i.id), [visible]);
+  // The list nests tasks under their epics; collapsed epics hide their tasks (and drop them from the selection order).
+  const tree = useMemo(() => buildTree(visible, items, filters.sort), [visible, items, filters.sort]);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(() => new Set());
+  const toggleEpic = useCallback((id: number) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }, []);
+  const rows = useMemo(() => flattenTree(tree), [tree]);
+  const rowIds = useMemo(() => flattenTree(tree, collapsed).map((i) => i.id), [tree, collapsed]);
   const selection = useCellSelection(rowIds);
   const isList = view === "list";
 
@@ -90,13 +105,16 @@ export function TasksPage({
       {isList ? (
         <>
           <ListView
-            items={visible}
+            rows={tree}
+            collapsed={collapsed}
+            onToggleEpic={toggleEpic}
+            onAddTask={onAddTask}
             sort={filters.sort}
             onSortChange={(sort: Sort) => onFiltersChange({ sort })}
             selection={selection}
             {...rowHandlers}
           />
-          <StatusBar items={visible} selection={selection} />
+          <StatusBar items={rows} selection={selection} />
         </>
       ) : (
         <>
@@ -121,6 +139,7 @@ export function TasksPage({
                     focus={q.focus}
                     advice={q.advice}
                     items={visible.filter((i) => i.impact === q.impact && i.focus === q.focus)}
+                    allItems={items}
                     onAdd={(impact, f) => onAdd({ impact, focus: f })}
                     onDropItem={onDrop}
                     {...rowHandlers}
